@@ -8,6 +8,20 @@ pymysql.install_as_MySQLdb()
 BASE_DIR = Path(__file__).resolve().parent.parent
 
 
+def load_env_file(path: Path) -> None:
+    if not path.exists():
+        return
+    for raw_line in path.read_text(encoding="utf-8").splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        os.environ.setdefault(key.strip(), value.strip())
+
+
+load_env_file(BASE_DIR / ".env")
+
+
 def env(name: str, default: str = "") -> str:
     return os.getenv(name, default)
 
@@ -101,6 +115,27 @@ AUTH_USER_MODEL = "accounts.User"
 CELERY_BROKER_URL = env("CELERY_BROKER_URL", "redis://127.0.0.1:6379/0")
 CELERY_RESULT_BACKEND = env("CELERY_RESULT_BACKEND", "redis://127.0.0.1:6379/1")
 
+SESSION_ENGINE = "django.contrib.sessions.backends.db"
+
+redis_cache_url = env("REDIS_CACHE_URL", "")
+if redis_cache_url:
+    CACHES = {
+        "default": {
+            "BACKEND": "django.core.cache.backends.redis.RedisCache",
+            "LOCATION": redis_cache_url,
+        }
+    }
+else:
+    CACHES = {
+        "default": {
+            "BACKEND": "django.core.cache.backends.locmem.LocMemCache",
+            "LOCATION": "online-exam-local-cache",
+        }
+    }
+
+PASSWORD_RESET_CODE_TTL = int(env("PASSWORD_RESET_CODE_TTL", "600"))
+PASSWORD_RESET_CODE_MAX_ATTEMPTS = int(env("PASSWORD_RESET_CODE_MAX_ATTEMPTS", "5"))
+
 EMAIL_BACKEND = "django.core.mail.backends.smtp.EmailBackend"
 EMAIL_HOST = env("EMAIL_HOST", "smtp.qq.com")
 EMAIL_PORT = int(env("EMAIL_PORT", "465"))
@@ -108,3 +143,4 @@ EMAIL_USE_SSL = env("EMAIL_USE_SSL", "True").lower() == "true"
 EMAIL_HOST_USER = env("EMAIL_HOST_USER", "")
 EMAIL_HOST_PASSWORD = env("EMAIL_HOST_PASSWORD", "")
 DEFAULT_FROM_EMAIL = env("DEFAULT_FROM_EMAIL", EMAIL_HOST_USER)
+EMAIL_TIMEOUT = int(env("EMAIL_TIMEOUT", "20"))

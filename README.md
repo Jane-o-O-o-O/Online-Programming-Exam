@@ -1,4 +1,4 @@
-# 在线编程考试系统
+﻿# 在线编程考试系统
 
 基于技术文档先落地的基础版工程骨架，面向 Windows 本地开发环境。
 
@@ -9,6 +9,7 @@
 - 题库、考试、提交、答题、判题任务、通知等核心模型
 - 基于 Session 的注册、登录、登出、当前用户接口
 - 教师/管理员创建题目与考试，学生开始考试、保存答案、交卷
+- QQ 邮箱验证码发送与密码重置流程
 - Redis/Celery 配置占位
 - QQ 邮箱 SMTP 配置入口
 - Windows 一键启动脚本
@@ -20,6 +21,8 @@
 - `POST /api/accounts/logout/`
 - `GET /api/accounts/me/`
 - `GET /api/accounts/stats/`
+- `POST /api/accounts/password-reset-code/`
+- `POST /api/accounts/password-reset/`
 - `GET/POST /api/exams/questions/`
 - `GET/POST /api/exams/exams/`
 - `POST /api/exams/exams/<id>/start/`
