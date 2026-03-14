@@ -287,6 +287,52 @@ class ExamApiTests(TestCase):
         self.assertEqual(len(payload["question_stats"]), 2)
         self.assertEqual(payload["question_stats"][0]["accuracy_rate"], 0.5)
 
+    def test_student_can_list_only_own_submissions(self):
+        self.client.force_login(self.teacher)
+        question_id = self.create_question(
+            title="Owned Submission",
+            question_type="single",
+            prompt="1+1?",
+            options=["1", "2"],
+            correct_answer={"value": "2"},
+        )
+        exam_id = self.create_exam([{"question_id": question_id, "score": 100}], title="Owned Exam")
+
+        self.client.logout()
+        self.client.force_login(self.student)
+        sub1 = self.client.post(f"/api/exams/exams/{exam_id}/start/", content_type="application/json").json()["submission_id"]
+        self.client.post(
+            f"/api/exams/submissions/{sub1}/answers/",
+            data={"answers": [{"question_id": question_id, "answer_payload": {"value": "2"}}]},
+            content_type="application/json",
+        )
+        self.client.post(f"/api/exams/submissions/{sub1}/finish/", content_type="application/json")
+
+        self.client.logout()
+        self.client.force_login(self.student2)
+        sub2 = self.client.post(f"/api/exams/exams/{exam_id}/start/", content_type="application/json").json()["submission_id"]
+        self.client.post(
+            f"/api/exams/submissions/{sub2}/answers/",
+            data={"answers": [{"question_id": question_id, "answer_payload": {"value": "2"}}]},
+            content_type="application/json",
+        )
+        self.client.post(f"/api/exams/submissions/{sub2}/finish/", content_type="application/json")
+
+        self.client.logout()
+        self.client.force_login(self.student)
+        response = self.client.get("/api/exams/my-submissions/")
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(len(payload["results"]), 1)
+        self.assertEqual(payload["results"][0]["id"], sub1)
+        self.assertEqual(payload["results"][0]["exam"]["title"], "Owned Exam")
+
+    def test_app_shell_renders_frontend_console(self):
+        response = self.client.get("/app/")
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "在线编程考试控制台")
+        self.assertContains(response, "/api/exams/my-submissions/")
+
     @override_settings(SILICONFLOW_API_KEY="test-key", SILICONFLOW_MODEL="Qwen/Qwen2.5-7B-Instruct", SILICONFLOW_BASE_URL="https://api.siliconflow.cn/v1")
     @patch("apps.exams.llm.urlopen")
     def test_teacher_can_get_exam_ai_summary(self, mock_urlopen):

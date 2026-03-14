@@ -12,6 +12,7 @@
 - QQ 邮箱验证码发送与密码重置流程
 - 本地同步编程题判题
 - 硅基流动大模型接入，可生成考试 AI 分析和提交 AI 讲评
+- 原生 Django 模板控制台页面 `/app/`，可直接完成教师和学生主流程
 - Redis/Celery 配置占位
 - Windows 一键启动脚本
 
@@ -34,6 +35,7 @@
 - `GET /api/exams/exams/<id>/analytics/`
 - `POST /api/exams/exams/<id>/analytics/ai-summary/`
 - `POST /api/exams/exams/<id>/start/`
+- `GET /api/exams/my-submissions/`
 - `POST /api/exams/submissions/<id>/answers/`
 - `POST /api/exams/submissions/<id>/finish/`
 - `GET /api/exams/submissions/<id>/`
@@ -59,11 +61,14 @@ Copy-Item .env.example .env
 .\run_windows.ps1
 ```
 
-4. 验证接口
+4. 打开控制台页面
+
+- `http://127.0.0.1:8000/app/`
+
+5. 验证基础接口
 
 - `http://127.0.0.1:8000/`
-- `http://127.0.0.1:8000/api/accounts/stats/`
-- `http://127.0.0.1:8000/api/exams/overview/`
+- `http://127.0.0.1:8000/api/accounts/me/`
 
 ## 一键演示数据
 
@@ -76,6 +81,27 @@ python manage.py seed_demo
 - 教师：`demo_teacher / Demo123456`
 - 学生：`demo_student / Demo123456`
 - 已发布演示考试：`系统演示考试`
+
+## 前端控制台说明
+
+页面入口：`/app/`
+
+教师侧可直接完成：
+
+- 创建题目
+- 创建考试
+- 发布考试
+- 查看考试统计
+- 生成 AI 教学分析
+
+学生侧可直接完成：
+
+- 登录后查看已发布考试
+- 开始考试
+- 保存答案
+- 交卷评分
+- 查看提交详情
+- 生成 AI 学习讲评
 
 ## 硅基流动大模型配置
 
@@ -109,7 +135,7 @@ python manage.py runserver
 
 ## 后续建议
 
-- 增加 Django REST Framework 和鉴权接口
-- 增加题目导入、考试编排、在线答题页面
+- 为前端控制台增加题目编辑和考试编辑
 - 将真实判题逻辑接入 Docker 沙箱与 Celery Worker
 - 为 AI 讲评增加缓存与异步任务队列
+- 增加更细粒度的成绩报表页面

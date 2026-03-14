@@ -1,0 +1,815 @@
+﻿
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>在线编程考试系统控制台</title>
+    <style>
+        :root {
+            --bg: #f4efe6;
+            --panel: rgba(255, 250, 242, 0.88);
+            --line: rgba(107, 70, 28, 0.12);
+            --text: #27180a;
+            --muted: #7d5a3a;
+            --accent: #d97706;
+            --accent-dark: #9a3412;
+            --secondary: #0f766e;
+            --danger: #b91c1c;
+            --success: #166534;
+            --shadow: 0 24px 60px rgba(72, 38, 7, 0.12);
+            --radius: 24px;
+        }
+        * { box-sizing: border-box; }
+        body {
+            margin: 0;
+            min-height: 100vh;
+            font-family: "Segoe UI Variable Display", "Trebuchet MS", "Microsoft YaHei UI", sans-serif;
+            color: var(--text);
+            background:
+                radial-gradient(circle at top left, rgba(15, 118, 110, 0.18), transparent 32%),
+                radial-gradient(circle at top right, rgba(217, 119, 6, 0.24), transparent 36%),
+                linear-gradient(160deg, #f8f3ea 0%, #f5ead8 55%, #efe8dc 100%);
+        }
+        body::before {
+            content: "";
+            position: fixed;
+            inset: 0;
+            pointer-events: none;
+            background-image:
+                linear-gradient(rgba(39, 24, 10, 0.04) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(39, 24, 10, 0.04) 1px, transparent 1px);
+            background-size: 38px 38px;
+            mask-image: linear-gradient(to bottom, rgba(0,0,0,0.35), transparent 82%);
+        }
+        .shell { width: min(1280px, calc(100vw - 32px)); margin: 20px auto 40px; position: relative; z-index: 1; }
+        .hero { display: grid; grid-template-columns: 1.2fr 0.8fr; gap: 18px; margin-bottom: 18px; }
+        .hero-card, .panel, .glass {
+            background: var(--panel);
+            border: 1px solid var(--line);
+            border-radius: var(--radius);
+            box-shadow: var(--shadow);
+            backdrop-filter: blur(14px);
+        }
+        .hero-main { padding: 28px; position: relative; overflow: hidden; }
+        .hero-main::after {
+            content: "AI EXAM";
+            position: absolute;
+            right: 18px;
+            bottom: -18px;
+            font-size: clamp(48px, 9vw, 110px);
+            line-height: 1;
+            font-weight: 800;
+            color: rgba(154, 52, 18, 0.08);
+            letter-spacing: 0.08em;
+        }
+        .eyebrow {
+            display: inline-flex; align-items: center; gap: 8px; padding: 7px 12px; border-radius: 999px;
+            background: rgba(15, 118, 110, 0.11); color: var(--secondary); font-size: 13px; font-weight: 700;
+            text-transform: uppercase; letter-spacing: 0.06em;
+        }
+        h1, h2, h3 { margin: 0; font-family: Georgia, "Times New Roman", serif; letter-spacing: -0.02em; }
+        h1 { margin-top: 18px; font-size: clamp(34px, 5vw, 56px); line-height: 0.96; max-width: 10ch; }
+        .hero-copy { margin-top: 16px; max-width: 58ch; color: var(--muted); font-size: 15px; line-height: 1.7; }
+        .hero-side { display: grid; gap: 18px; }
+        .mini-stat { padding: 22px; display: grid; gap: 10px; }
+        .mini-stat strong { font-size: 32px; font-family: Georgia, serif; }
+        .mini-stat span { color: var(--muted); font-size: 14px; }
+        .toolbar { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 12px; margin-bottom: 18px; align-items: center; }
+        .toolbar-actions, .hero-actions, .inline-actions, .row-actions, .pill-row, .question-picker { display: flex; gap: 10px; flex-wrap: wrap; }
+        .grid { display: grid; gap: 18px; }
+        .dashboard { grid-template-columns: 360px minmax(0, 1fr); }
+        .stack { display: grid; gap: 18px; }
+        .split { display: grid; grid-template-columns: 1.1fr 0.9fr; gap: 18px; }
+        .panel { padding: 20px; }
+        .panel-header { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 14px; }
+        .panel-title { font-size: 28px; }
+        .panel-subtitle, .meta, .footer-note { color: var(--muted); font-size: 14px; line-height: 1.6; }
+        .metrics { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 12px; }
+        .metric { padding: 14px; border-radius: 18px; background: linear-gradient(180deg, rgba(255,255,255,0.74), rgba(255,244,230,0.92)); border: 1px solid rgba(107, 70, 28, 0.08); }
+        .metric-label { color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: 0.08em; }
+        .metric-value { margin-top: 8px; font-size: 28px; font-weight: 700; }
+        .hidden { display: none !important; }
+        form, .list { display: grid; gap: 12px; }
+        .field-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+        label { display: grid; gap: 6px; font-size: 13px; color: var(--muted); font-weight: 700; }
+        input, select, textarea, button { font: inherit; }
+        input, select, textarea {
+            width: 100%; padding: 12px 14px; border-radius: 14px; border: 1px solid rgba(107, 70, 28, 0.14);
+            background: rgba(255, 255, 255, 0.76); color: var(--text);
+        }
+        textarea { min-height: 108px; resize: vertical; }
+        input:focus, select:focus, textarea:focus {
+            outline: none; border-color: rgba(217, 119, 6, 0.7); box-shadow: 0 0 0 4px rgba(217, 119, 6, 0.14); background: #fff;
+        }
+        button { border: 0; border-radius: 999px; padding: 11px 16px; font-weight: 700; cursor: pointer; transition: transform 140ms ease, opacity 140ms ease; }
+        button:hover { transform: translateY(-1px); }
+        button:disabled { opacity: 0.55; cursor: wait; transform: none; }
+        .btn-primary { background: linear-gradient(135deg, var(--accent), var(--accent-dark)); color: #fff7ed; }
+        .btn-secondary { background: rgba(15, 118, 110, 0.13); color: var(--secondary); }
+        .btn-ghost { background: rgba(107, 70, 28, 0.08); color: var(--text); }
+        .btn-danger { background: rgba(185, 28, 28, 0.12); color: var(--danger); }
+        .note, .status { padding: 12px 14px; border-radius: 16px; font-size: 14px; line-height: 1.6; }
+        .note { background: rgba(15, 118, 110, 0.08); color: var(--secondary); }
+        .status { background: rgba(217, 119, 6, 0.08); color: var(--accent-dark); border: 1px solid rgba(217, 119, 6, 0.16); }
+        .status.error { background: rgba(185, 28, 28, 0.08); color: var(--danger); border-color: rgba(185, 28, 28, 0.16); }
+        .status.success { background: rgba(22, 101, 52, 0.08); color: var(--success); border-color: rgba(22, 101, 52, 0.16); }
+        .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 14px; }
+        .card, .answer-block { padding: 18px; border-radius: 20px; border: 1px solid rgba(107, 70, 28, 0.1); background: linear-gradient(180deg, rgba(255,255,255,0.72), rgba(255,247,237,0.88)); display: grid; gap: 10px; }
+        .card h3 { font-size: 24px; }
+        .pill, .picker { border-radius: 999px; padding: 6px 10px; font-size: 12px; border: 1px solid rgba(107, 70, 28, 0.12); background: rgba(255,255,255,0.7); }
+        .picker { display: inline-flex; align-items: center; gap: 8px; padding-right: 12px; }
+        .picker input[type="number"] { width: 84px; padding: 8px 10px; }
+        .choice-list { display: grid; gap: 8px; margin-top: 10px; }
+        .choice-item { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-radius: 14px; background: rgba(255,255,255,0.74); }
+        .choice-item input { width: auto; margin: 0; }
+        pre {
+            margin: 0; padding: 16px; border-radius: 18px; background: #24180d; color: #f8e8c7; overflow: auto; white-space: pre-wrap;
+            word-break: break-word; font-family: Consolas, "Cascadia Mono", monospace; font-size: 13px; line-height: 1.7;
+        }
+        code { font-family: Consolas, "Cascadia Mono", monospace; }
+        @media (max-width: 1080px) { .hero, .dashboard, .split, .field-grid { grid-template-columns: 1fr; } }
+        @media (max-width: 720px) {
+            .shell { width: min(100vw - 18px, 1280px); margin-top: 10px; }
+            .hero-main, .panel, .mini-stat { padding: 18px; }
+            h1 { max-width: none; }
+        }
+    </style>
+</head>
+<body>
+<div class="shell">
+    <section class="hero">
+        <div class="hero-card hero-main">
+            <div class="eyebrow">Windows Ready · Session Auth · SiliconFlow</div>
+            <h1>在线编程考试控制台</h1>
+            <p class="hero-copy">教师可以建题、组卷、发布考试、拉取 AI 成绩分析；学生可以开考、保存答案、交卷，并直接拿到 AI 讲评。</p>
+            <div class="hero-actions" style="margin-top: 18px;">
+                <a href="/admin/" style="text-decoration:none;"><button class="btn-ghost" type="button">Django Admin</button></a>
+                <button class="btn-secondary" type="button" id="seedHintBtn">演示账号提示</button>
+            </div>
+        </div>
+        <div class="hero-side">
+            <div class="hero-card mini-stat">
+                <span>系统入口</span>
+                <strong>/app/</strong>
+                <span>原生 JS 前端，直接调用当前 Django API</span>
+            </div>
+            <div class="hero-card mini-stat">
+                <span>大模型状态</span>
+                <strong id="llmBadge">检查中</strong>
+                <span id="llmMeta">将从 `/api/exams/overview/` 读取模型配置状态</span>
+            </div>
+        </div>
+    </section>
+
+    <div class="toolbar glass" style="padding: 14px 18px;">
+        <div>
+            <div style="font-weight: 700;">当前会话</div>
+            <div class="meta" id="sessionMeta">未登录</div>
+        </div>
+        <div class="toolbar-actions">
+            <button class="btn-secondary hidden" type="button" id="refreshBtn">刷新数据</button>
+            <button class="btn-danger hidden" type="button" id="logoutBtn">退出登录</button>
+        </div>
+    </div>
+
+    <div id="globalStatus" class="status hidden" style="margin: 18px 0;"></div>
+
+    <section id="authSection" class="grid dashboard">
+        <div class="stack">
+            <div class="panel">
+                <div class="panel-header">
+                    <div>
+                        <h2 class="panel-title">登录</h2>
+                        <div class="panel-subtitle">使用现有账号进入教师或学生控制台</div>
+                    </div>
+                </div>
+                <form id="loginForm">
+                    <label>用户名
+                        <input name="username" value="demo_teacher" required>
+                    </label>
+                    <label>密码
+                        <input type="password" name="password" value="Demo123456" required>
+                    </label>
+                    <button class="btn-primary" type="submit">登录系统</button>
+                </form>
+            </div>
+            <div class="panel">
+                <div class="panel-header">
+                    <div>
+                        <h2 class="panel-title">找回密码</h2>
+                        <div class="panel-subtitle">QQ 邮箱验证码已经接通</div>
+                    </div>
+                </div>
+                <form id="resetCodeForm">
+                    <div class="field-grid">
+                        <label>用户名<input name="username" required></label>
+                        <label>邮箱<input type="email" name="email" required></label>
+                    </div>
+                    <button class="btn-secondary" type="submit">发送验证码</button>
+                </form>
+                <form id="resetPasswordForm">
+                    <div class="field-grid">
+                        <label>用户名<input name="username" required></label>
+                        <label>邮箱<input type="email" name="email" required></label>
+                    </div>
+                    <div class="field-grid">
+                        <label>验证码<input name="code" required></label>
+                        <label>新密码<input type="password" name="new_password" required></label>
+                    </div>
+                    <button class="btn-ghost" type="submit">重置密码</button>
+                </form>
+            </div>
+        </div>
+        <div class="stack">
+            <div class="panel">
+                <div class="panel-header">
+                    <div>
+                        <h2 class="panel-title">注册</h2>
+                        <div class="panel-subtitle">系统支持学生和教师自注册</div>
+                    </div>
+                </div>
+                <form id="registerForm">
+                    <div class="field-grid">
+                        <label>用户名<input name="username" required></label>
+                        <label>邮箱<input type="email" name="email" required></label>
+                    </div>
+                    <div class="field-grid">
+                        <label>密码<input type="password" name="password" required></label>
+                        <label>角色
+                            <select name="role">
+                                <option value="student">学生</option>
+                                <option value="teacher">教师</option>
+                            </select>
+                        </label>
+                    </div>
+                    <div class="field-grid">
+                        <label>真实姓名<input name="real_name"></label>
+                        <label>手机号<input name="mobile"></label>
+                    </div>
+                    <button class="btn-primary" type="submit">注册并登录</button>
+                </form>
+            </div>
+            <div class="panel">
+                <h2 class="panel-title">演示路径</h2>
+                <div class="list" style="margin-top: 12px;">
+                    <div class="note">教师演示账号：`demo_teacher / Demo123456`<br>学生演示账号：`demo_student / Demo123456`</div>
+                    <div class="note">如果还没生成演示数据，先执行：<br><code>python manage.py seed_demo</code></div>
+                    <div class="note">推荐体验顺序：教师登录建题建卷并发布，然后学生登录开考交卷，最后分别体验 AI 分析和 AI 讲评。</div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <section id="appSection" class="grid dashboard hidden">
+        <aside class="stack">
+            <div class="panel">
+                <div class="panel-header"><div><h2 class="panel-title">账户信息</h2><div class="panel-subtitle">当前登录用户与角色状态</div></div></div>
+                <div class="metrics">
+                    <div class="metric"><div class="metric-label">用户名</div><div class="metric-value" id="metricUsername">-</div></div>
+                    <div class="metric"><div class="metric-label">角色</div><div class="metric-value" id="metricRole">-</div></div>
+                </div>
+                <div class="footer-note" id="userDetail"></div>
+            </div>
+            <div class="panel">
+                <div class="panel-header"><div><h2 class="panel-title">系统概览</h2><div class="panel-subtitle">全局统计与当前模型配置</div></div></div>
+                <div class="metrics" id="overviewMetrics"></div>
+            </div>
+            <div class="panel hidden" id="teacherStatsPanel">
+                <div class="panel-header"><div><h2 class="panel-title">用户统计</h2><div class="panel-subtitle">教师侧账户结构概览</div></div></div>
+                <div class="metrics" id="teacherStats"></div>
+            </div>
+            <div class="panel"><h2 class="panel-title">调试提示</h2><div class="note" style="margin-top: 12px;">所有操作都通过同域 API 完成。AI 按钮会直接请求硅基流动模型，不做本地伪造。</div></div>
+        </aside>
+
+        <main class="stack">
+            <section id="teacherSection" class="stack hidden">
+                <div class="split">
+                    <div class="panel">
+                        <div class="panel-header"><div><h2 class="panel-title">创建题目</h2><div class="panel-subtitle">支持单选、多选、编程题</div></div></div>
+                        <form id="questionForm">
+                            <div class="field-grid">
+                                <label>题目标题<input name="title" required></label>
+                                <label>题型
+                                    <select name="question_type" id="questionTypeSelect">
+                                        <option value="single">单选题</option>
+                                        <option value="multiple">多选题</option>
+                                        <option value="program">编程题</option>
+                                    </select>
+                                </label>
+                            </div>
+                            <div class="field-grid">
+                                <label>难度
+                                    <select name="difficulty">
+                                        <option value="1">简单</option>
+                                        <option value="2" selected>中等</option>
+                                        <option value="3">困难</option>
+                                    </select>
+                                </label>
+                                <label>语言<input name="language" placeholder="编程题可填 python"></label>
+                            </div>
+                            <label>题目描述<textarea name="prompt" required></textarea></label>
+                            <label id="optionsField">选项列表（每行一个）<textarea name="options" placeholder="A&#10;B&#10;C"></textarea></label>
+                            <label id="correctAnswerField">正确答案<textarea name="correct_answer" placeholder="单选填一个值，多选用英文逗号分隔，如 A,B"></textarea></label>
+                            <label id="programCasesField" class="hidden">程序测试用例 JSON<textarea name="program_cases" placeholder='{"cases":[{"input":"2\\n","output":"4\\n"}],"time_limit_seconds":1}'></textarea></label>
+                            <label>参考答案<textarea name="reference_answer"></textarea></label>
+                            <label>标签（逗号分隔）<input name="tags" placeholder="python,数组,算法"></label>
+                            <button class="btn-primary" type="submit">创建题目</button>
+                        </form>
+                    </div>
+
+                    <div class="panel">
+                        <div class="panel-header"><div><h2 class="panel-title">创建考试</h2><div class="panel-subtitle">从题库中选题并设置分值</div></div></div>
+                        <form id="examForm">
+                            <div class="field-grid">
+                                <label>考试标题<input name="title" required></label>
+                                <label>考试状态
+                                    <select name="status">
+                                        <option value="draft">草稿</option>
+                                        <option value="published">已发布</option>
+                                    </select>
+                                </label>
+                            </div>
+                            <label>考试说明<textarea name="description"></textarea></label>
+                            <div class="field-grid">
+                                <label>开始时间<input type="datetime-local" name="starts_at" required></label>
+                                <label>结束时间<input type="datetime-local" name="ends_at" required></label>
+                            </div>
+                            <div class="field-grid">
+                                <label>考试时长（分钟）<input type="number" name="duration_minutes" value="120" min="1" required></label>
+                                <div class="note">先在左侧创建题目，下面会自动加载题库供组卷。</div>
+                            </div>
+                            <div>
+                                <div class="meta" style="margin-bottom: 10px;">选题与分值</div>
+                                <div class="question-picker" id="questionPicker"></div>
+                            </div>
+                            <button class="btn-primary" type="submit">创建考试</button>
+                        </form>
+                    </div>
+                </div>
+
+                <div class="panel">
+                    <div class="panel-header"><div><h2 class="panel-title">教师考试控制台</h2><div class="panel-subtitle">发布、结束、查看成绩分析、生成 AI 教学建议</div></div></div>
+                    <div class="cards" id="teacherExamList"></div>
+                </div>
+
+                <div class="split">
+                    <div class="panel">
+                        <div class="panel-header"><div><h2 class="panel-title">考试分析</h2><div class="panel-subtitle">结构化统计结果</div></div></div>
+                        <pre id="teacherAnalyticsOutput">请选择一场考试并加载分析。</pre>
+                    </div>
+                    <div class="panel">
+                        <div class="panel-header"><div><h2 class="panel-title">AI 教学建议</h2><div class="panel-subtitle">来自硅基流动大模型的中文分析</div></div></div>
+                        <pre id="teacherAiOutput">点击“AI 分析”后显示内容。</pre>
+                    </div>
+                </div>
+            </section>
+
+            <section id="studentSection" class="stack hidden">
+                <div class="panel">
+                    <div class="panel-header"><div><h2 class="panel-title">可参加考试</h2><div class="panel-subtitle">已发布考试可直接开始作答</div></div></div>
+                    <div class="cards" id="studentExamList"></div>
+                </div>
+
+                <div class="split">
+                    <div class="panel">
+                        <div class="panel-header">
+                            <div><h2 class="panel-title">当前作答区</h2><div class="panel-subtitle">支持保存答案和交卷</div></div>
+                            <div class="inline-actions hidden" id="activeSubmissionActions">
+                                <button class="btn-secondary" type="button" id="saveAnswersBtn">保存答案</button>
+                                <button class="btn-primary" type="button" id="finishSubmissionBtn">交卷评分</button>
+                            </div>
+                        </div>
+                        <div id="activeExamMeta" class="note">点击“开始考试”后，这里会出现题目。</div>
+                        <div class="list" id="answerWorkspace" style="margin-top: 14px;"></div>
+                    </div>
+                    <div class="panel">
+                        <div class="panel-header"><div><h2 class="panel-title">我的提交</h2><div class="panel-subtitle">查看成绩、判题信息和 AI 讲评</div></div></div>
+                        <div class="cards" id="submissionList"></div>
+                    </div>
+                </div>
+
+                <div class="split">
+                    <div class="panel">
+                        <div class="panel-header"><div><h2 class="panel-title">提交详情</h2><div class="panel-subtitle">当前提交的判题结果</div></div></div>
+                        <pre id="submissionDetailOutput">选择“查看详情”后显示。</pre>
+                    </div>
+                    <div class="panel">
+                        <div class="panel-header"><div><h2 class="panel-title">AI 学习讲评</h2><div class="panel-subtitle">基于你的判题结果生成</div></div></div>
+                        <pre id="submissionAiOutput">点击“AI 讲评”后显示内容。</pre>
+                    </div>
+                </div>
+            </section>
+        </main>
+    </section>
+</div>
+
+<script>
+const state = { user: null, overview: null, questions: [], exams: [], mySubmissions: [], activeSubmission: null, activeExam: null };
+const $ = (selector) => document.querySelector(selector);
+const $$ = (selector) => Array.from(document.querySelectorAll(selector));
+function setStatus(message, type = "") {
+    const box = $("#globalStatus");
+    if (!message) {
+        box.className = "status hidden";
+        box.textContent = "";
+        return;
+    }
+    box.className = `status ${type}`.trim();
+    box.textContent = message;
+}
+function pretty(data) { return JSON.stringify(data, null, 2); }
+async function api(path, options = {}) {
+    const config = { method: options.method || "GET", headers: { "Content-Type": "application/json", ...(options.headers || {}) }, credentials: "same-origin" };
+    if (options.body !== undefined) config.body = typeof options.body === "string" ? options.body : JSON.stringify(options.body);
+    const response = await fetch(path, config);
+    let payload = {};
+    try { payload = await response.json(); } catch (_err) { payload = {}; }
+    if (!response.ok) throw new Error(payload.error || `请求失败：${response.status}`);
+    return payload;
+}
+function isoLocalInput(offsetMinutes = 0) {
+    const date = new Date(Date.now() + offsetMinutes * 60 * 1000);
+    const pad = (value) => String(value).padStart(2, "0");
+    return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+}
+function escapeHtml(value) {
+    return String(value ?? "").replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;").replaceAll("'", "&#39;");
+}
+function renderOverview() {
+    const metrics = $("#overviewMetrics");
+    const llm = state.overview?.llm || {};
+    const items = [["考试数", state.overview?.exam_count ?? 0], ["题目数", state.overview?.question_count ?? 0], ["提交数", state.overview?.submission_count ?? 0], ["模型状态", llm.configured ? "已配置" : "未配置"]];
+    metrics.innerHTML = items.map(([label, value]) => `<div class="metric"><div class="metric-label">${escapeHtml(label)}</div><div class="metric-value">${escapeHtml(value)}</div></div>`).join("");
+    $("#llmBadge").textContent = llm.configured ? "已接入" : "未配置";
+    $("#llmMeta").textContent = llm.model ? `${llm.model} · ${llm.configured ? "可调用" : "待配置"}` : "模型信息未返回";
+}
+function renderTeacherStats(stats) {
+    $("#teacherStatsPanel").classList.remove("hidden");
+    $("#teacherStats").innerHTML = [["总用户", stats.users], ["教师", stats.teachers], ["学生", stats.students]].map(([label, value]) => `<div class="metric"><div class="metric-label">${escapeHtml(label)}</div><div class="metric-value">${escapeHtml(value)}</div></div>`).join("");
+}
+function setAuthenticatedUI(authenticated) {
+    $("#authSection").classList.toggle("hidden", authenticated);
+    $("#appSection").classList.toggle("hidden", !authenticated);
+    $("#refreshBtn").classList.toggle("hidden", !authenticated);
+    $("#logoutBtn").classList.toggle("hidden", !authenticated);
+}
+function syncAuthState() {
+    const user = state.user;
+    const authenticated = Boolean(user);
+    setAuthenticatedUI(authenticated);
+    if (!authenticated) {
+        $("#sessionMeta").textContent = "未登录";
+        $("#teacherSection").classList.add("hidden");
+        $("#studentSection").classList.add("hidden");
+        return;
+    }
+    $("#sessionMeta").textContent = `${user.username} · ${user.role} · ${user.email || "无邮箱"}`;
+    $("#metricUsername").textContent = user.username;
+    $("#metricRole").textContent = user.role;
+    $("#userDetail").textContent = `${user.real_name || "未填写姓名"} · ${user.mobile || "未填写手机号"}`;
+    const isTeacher = ["teacher", "admin"].includes(user.role);
+    $("#teacherSection").classList.toggle("hidden", !isTeacher);
+    $("#studentSection").classList.toggle("hidden", isTeacher);
+    $("#teacherStatsPanel").classList.add("hidden");
+}
+function renderQuestionPicker() {
+    const container = $("#questionPicker");
+    if (!state.questions.length) {
+        container.innerHTML = '<div class="note">当前还没有题目，请先创建题目。</div>';
+        return;
+    }
+    container.innerHTML = state.questions.map((question) => `<label class="picker"><input type="checkbox" data-question-id="${question.id}"><span>${escapeHtml(question.title)} · ${escapeHtml(question.question_type)}</span><input type="number" min="0" step="1" value="100" data-score-for="${question.id}" title="分值"></label>`).join("");
+}
+function renderTeacherExams() {
+    const container = $("#teacherExamList");
+    if (!state.exams.length) {
+        container.innerHTML = '<div class="note">当前没有考试，请先创建考试。</div>';
+        return;
+    }
+    container.innerHTML = state.exams.map((exam) => `<article class="card"><div class="pill-row"><span class="pill">${escapeHtml(exam.status)}</span><span class="pill">${exam.question_count} 题</span><span class="pill">${exam.duration_minutes} 分钟</span></div><h3>${escapeHtml(exam.title)}</h3><div class="meta">${escapeHtml(exam.description || "暂无考试说明")}</div><div class="meta">开始：${escapeHtml(exam.starts_at)}<br>结束：${escapeHtml(exam.ends_at)}</div><div class="row-actions"><button class="btn-secondary" type="button" onclick="publishExam(${exam.id})">发布</button><button class="btn-danger" type="button" onclick="finishExam(${exam.id})">结束</button><button class="btn-ghost" type="button" onclick="loadAnalytics(${exam.id})">统计</button><button class="btn-primary" type="button" onclick="loadExamAiSummary(${exam.id})">AI 分析</button></div></article>`).join("");
+}
+function renderStudentExams() {
+    const container = $("#studentExamList");
+    const availableExams = state.exams.filter((exam) => exam.status === "published");
+    if (!availableExams.length) {
+        container.innerHTML = '<div class="note">目前没有已发布考试。</div>';
+        return;
+    }
+    container.innerHTML = availableExams.map((exam) => `<article class="card"><div class="pill-row"><span class="pill">${exam.question_count} 题</span><span class="pill">${exam.duration_minutes} 分钟</span></div><h3>${escapeHtml(exam.title)}</h3><div class="meta">${escapeHtml(exam.description || "暂无考试说明")}</div><div class="meta">开始：${escapeHtml(exam.starts_at)}<br>结束：${escapeHtml(exam.ends_at)}</div><div class="row-actions"><button class="btn-primary" type="button" onclick="startExam(${exam.id})">开始考试</button></div></article>`).join("");
+}
+function renderActiveSubmission() {
+    const exam = state.activeExam;
+    const submission = state.activeSubmission;
+    const actions = $("#activeSubmissionActions");
+    const meta = $("#activeExamMeta");
+    const workspace = $("#answerWorkspace");
+    if (!exam || !submission) {
+        actions.classList.add("hidden");
+        meta.textContent = "点击“开始考试”后，这里会出现题目。";
+        workspace.innerHTML = "";
+        return;
+    }
+    actions.classList.toggle("hidden", submission.status !== "in_progress");
+    meta.textContent = `${exam.title} · 提交 #${submission.id} · 当前状态 ${submission.status}`;
+    workspace.innerHTML = exam.questions.map((item) => {
+        const question = item.question;
+        const answer = submission.answerMap?.[item.question_id] || {};
+        let answerHtml = "";
+        if (question.question_type === "single") {
+            const current = answer.answer_payload?.value || "";
+            answerHtml = `<div class="choice-list">${(question.options || []).map((option) => `<label class="choice-item"><input type="radio" name="q-${item.question_id}" value="${escapeHtml(option)}" ${String(option) === String(current) ? "checked" : ""}>${escapeHtml(option)}</label>`).join("")}</div>`;
+        } else if (question.question_type === "multiple") {
+            const values = new Set(answer.answer_payload?.values || []);
+            answerHtml = `<div class="choice-list">${(question.options || []).map((option) => `<label class="choice-item"><input type="checkbox" data-multi="${item.question_id}" value="${escapeHtml(option)}" ${values.has(option) ? "checked" : ""}>${escapeHtml(option)}</label>`).join("")}</div>`;
+        } else {
+            answerHtml = `<textarea data-source-code="${item.question_id}" placeholder="请输入 Python 代码">${escapeHtml(answer.source_code || "")}</textarea>`;
+        }
+        return `<div class="answer-block" data-question-id="${item.question_id}" data-question-type="${question.question_type}"><div class="pill-row"><span class="pill">${escapeHtml(question.question_type)}</span><span class="pill">${item.score} 分</span>${question.language ? `<span class="pill">${escapeHtml(question.language)}</span>` : ""}</div><h3>${escapeHtml(question.title)}</h3><div class="meta">${escapeHtml(question.prompt)}</div>${answerHtml}</div>`;
+    }).join("");
+}
+function renderMySubmissions() {
+    const container = $("#submissionList");
+    if (!state.mySubmissions.length) {
+        container.innerHTML = '<div class="note">你还没有提交记录。</div>';
+        return;
+    }
+    container.innerHTML = state.mySubmissions.map((submission) => `<article class="card"><div class="pill-row"><span class="pill">${escapeHtml(submission.status)}</span><span class="pill">${submission.total_score} 分</span></div><h3>${escapeHtml(submission.exam.title)}</h3><div class="meta">提交时间：${escapeHtml(submission.submitted_at || "未提交")}</div><div class="row-actions"><button class="btn-ghost" type="button" onclick="loadSubmissionDetail(${submission.id})">查看详情</button><button class="btn-primary" type="button" onclick="loadSubmissionAiFeedback(${submission.id})">AI 讲评</button></div></article>`).join("");
+}
+function collectAnswers() {
+    if (!state.activeExam || !state.activeSubmission) return [];
+    return state.activeExam.questions.map((item) => {
+        const block = document.querySelector(`[data-question-id="${item.question_id}"]`);
+        const type = block?.dataset.questionType;
+        if (type === "single") {
+            const checked = document.querySelector(`input[name="q-${item.question_id}"]:checked`);
+            return { question_id: item.question_id, answer_payload: { value: checked ? checked.value : "" } };
+        }
+        if (type === "multiple") {
+            const values = $$(`input[data-multi="${item.question_id}"]:checked`).map((input) => input.value);
+            return { question_id: item.question_id, answer_payload: { values } };
+        }
+        const source = document.querySelector(`textarea[data-source-code="${item.question_id}"]`)?.value || "";
+        return { question_id: item.question_id, source_code: source };
+    });
+}
+async function refreshOverview() { state.overview = await api("/api/exams/overview/"); renderOverview(); }
+async function refreshQuestions() { state.questions = (await api("/api/exams/questions/")).results || []; renderQuestionPicker(); }
+async function refreshExams() { state.exams = (await api("/api/exams/exams/")).results || []; renderTeacherExams(); renderStudentExams(); }
+async function refreshMySubmissions() { if (!state.user || ["teacher", "admin"].includes(state.user.role)) return; state.mySubmissions = (await api("/api/exams/my-submissions/")).results || []; renderMySubmissions(); }
+async function refreshTeacherStats() { if (!state.user || !["teacher", "admin"].includes(state.user.role)) return; renderTeacherStats(await api("/api/accounts/stats/")); }
+async function bootstrapAuthenticated() {
+    syncAuthState();
+    await refreshOverview();
+    await refreshExams();
+    if (["teacher", "admin"].includes(state.user.role)) {
+        await refreshQuestions();
+        await refreshTeacherStats();
+    } else {
+        await refreshMySubmissions();
+    }
+}
+async function restoreSession() {
+    try {
+        const payload = await api("/api/accounts/me/");
+        state.user = payload.user;
+        await bootstrapAuthenticated();
+    } catch (_err) {
+        state.user = null;
+        syncAuthState();
+        await refreshOverview();
+    }
+}
+async function handleLogin(event) {
+    event.preventDefault();
+    try {
+        const result = await api("/api/accounts/login/", { method: "POST", body: Object.fromEntries(new FormData(event.currentTarget).entries()) });
+        state.user = result.user;
+        setStatus(`登录成功：${result.user.username}`, "success");
+        await bootstrapAuthenticated();
+    } catch (error) { setStatus(error.message, "error"); }
+}
+async function handleRegister(event) {
+    event.preventDefault();
+    try {
+        const result = await api("/api/accounts/register/", { method: "POST", body: Object.fromEntries(new FormData(event.currentTarget).entries()) });
+        state.user = result.user;
+        setStatus(`注册成功：${result.user.username}`, "success");
+        await bootstrapAuthenticated();
+    } catch (error) { setStatus(error.message, "error"); }
+}
+async function handleLogout() {
+    try { await api("/api/accounts/logout/", { method: "POST" }); } finally {
+        state.user = null; state.activeExam = null; state.activeSubmission = null; state.mySubmissions = [];
+        renderActiveSubmission(); renderMySubmissions(); syncAuthState(); setStatus("已退出登录", "success"); await refreshOverview();
+    }
+}
+async function handleResetCode(event) {
+    event.preventDefault();
+    try {
+        const result = await api("/api/accounts/password-reset-code/", { method: "POST", body: Object.fromEntries(new FormData(event.currentTarget).entries()) });
+        setStatus(`验证码已发送，${result.ttl_seconds} 秒内有效`, "success");
+    } catch (error) { setStatus(error.message, "error"); }
+}
+async function handleResetPassword(event) {
+    event.preventDefault();
+    try {
+        await api("/api/accounts/password-reset/", { method: "POST", body: Object.fromEntries(new FormData(event.currentTarget).entries()) });
+        setStatus("密码重置成功，请重新登录", "success");
+    } catch (error) { setStatus(error.message, "error"); }
+}
+function buildQuestionPayload(form) {
+    const data = Object.fromEntries(new FormData(form).entries());
+    const questionType = data.question_type;
+    let correctAnswer = {};
+    let options = [];
+    if (questionType === "single") {
+        options = data.options.split(/\r?\n/).map((item) => item.trim()).filter(Boolean);
+        correctAnswer = { value: data.correct_answer.trim() };
+    } else if (questionType === "multiple") {
+        options = data.options.split(/\r?\n/).map((item) => item.trim()).filter(Boolean);
+        correctAnswer = { values: data.correct_answer.split(",").map((item) => item.trim()).filter(Boolean) };
+    } else {
+        correctAnswer = JSON.parse(data.program_cases || "{}");
+    }
+    return {
+        title: data.title,
+        question_type: questionType,
+        difficulty: Number(data.difficulty),
+        language: data.language,
+        prompt: data.prompt,
+        options,
+        correct_answer: correctAnswer,
+        reference_answer: data.reference_answer,
+        tags: data.tags.split(",").map((item) => item.trim()).filter(Boolean),
+    };
+}
+async function handleQuestionCreate(event) {
+    event.preventDefault();
+    try {
+        await api("/api/exams/questions/", { method: "POST", body: buildQuestionPayload(event.currentTarget) });
+        event.currentTarget.reset();
+        $("#questionTypeSelect").value = "single";
+        syncQuestionFormMode();
+        await refreshQuestions();
+        await refreshOverview();
+        setStatus("题目创建成功", "success");
+    } catch (error) { setStatus(error.message, "error"); }
+}
+function syncQuestionFormMode() {
+    const type = $("#questionTypeSelect").value;
+    $("#optionsField").classList.toggle("hidden", type === "program");
+    $("#correctAnswerField").classList.toggle("hidden", type === "program");
+    $("#programCasesField").classList.toggle("hidden", type !== "program");
+}
+function selectedExamQuestions() {
+    return $$('[data-question-id]').map((checkbox) => {
+        if (!checkbox.checked) return null;
+        const scoreInput = document.querySelector(`[data-score-for="${checkbox.dataset.questionId}"]`);
+        return { question_id: Number(checkbox.dataset.questionId), score: Number(scoreInput?.value || 0) };
+    }).filter(Boolean);
+}
+async function handleExamCreate(event) {
+    event.preventDefault();
+    const data = Object.fromEntries(new FormData(event.currentTarget).entries());
+    const questions = selectedExamQuestions();
+    if (!questions.length) {
+        setStatus("请至少选择一道题目", "error");
+        return;
+    }
+    try {
+        await api("/api/exams/exams/", {
+            method: "POST",
+            body: {
+                title: data.title,
+                description: data.description,
+                starts_at: new Date(data.starts_at).toISOString(),
+                ends_at: new Date(data.ends_at).toISOString(),
+                duration_minutes: Number(data.duration_minutes),
+                status: data.status,
+                questions,
+            },
+        });
+        event.currentTarget.reset();
+        seedExamFormDefaults();
+        await refreshExams();
+        await refreshOverview();
+        setStatus("考试创建成功", "success");
+    } catch (error) { setStatus(error.message, "error"); }
+}
+function seedExamFormDefaults() {
+    const startsAt = $("#examForm input[name='starts_at']");
+    const endsAt = $("#examForm input[name='ends_at']");
+    if (startsAt) startsAt.value = isoLocalInput(10);
+    if (endsAt) endsAt.value = isoLocalInput(130);
+}
+async function publishExam(examId) {
+    try { await api(`/api/exams/exams/${examId}/publish/`, { method: "POST" }); await refreshExams(); setStatus(`考试 #${examId} 已发布`, "success"); }
+    catch (error) { setStatus(error.message, "error"); }
+}
+async function finishExam(examId) {
+    try { await api(`/api/exams/exams/${examId}/finish/`, { method: "POST" }); await refreshExams(); setStatus(`考试 #${examId} 已结束`, "success"); }
+    catch (error) { setStatus(error.message, "error"); }
+}
+async function loadAnalytics(examId) {
+    try { $("#teacherAnalyticsOutput").textContent = pretty(await api(`/api/exams/exams/${examId}/analytics/`)); setStatus(`考试 #${examId} 统计已加载`, "success"); }
+    catch (error) { setStatus(error.message, "error"); }
+}
+async function loadExamAiSummary(examId) {
+    try {
+        $("#teacherAiOutput").textContent = "AI 分析生成中...";
+        const result = await api(`/api/exams/exams/${examId}/analytics/ai-summary/`, { method: "POST" });
+        $("#teacherAiOutput").textContent = result.content || pretty(result);
+        setStatus(`考试 #${examId} AI 分析已生成`, "success");
+    } catch (error) {
+        $("#teacherAiOutput").textContent = error.message;
+        setStatus(error.message, "error");
+    }
+}
+async function startExam(examId) {
+    try {
+        const result = await api(`/api/exams/exams/${examId}/start/`, { method: "POST" });
+        state.activeExam = result.exam;
+        state.activeSubmission = { id: result.submission_id, status: result.status, answerMap: {} };
+        renderActiveSubmission();
+        setStatus(`已开始考试：${result.exam.title}`, "success");
+    } catch (error) { setStatus(error.message, "error"); }
+}
+async function saveAnswers() {
+    if (!state.activeSubmission) return;
+    try {
+        const answers = collectAnswers();
+        await api(`/api/exams/submissions/${state.activeSubmission.id}/answers/`, { method: "POST", body: { answers } });
+        state.activeSubmission.answerMap = Object.fromEntries(answers.map((item) => [item.question_id, item]));
+        setStatus("答案已保存", "success");
+    } catch (error) { setStatus(error.message, "error"); }
+}
+async function finishSubmission() {
+    if (!state.activeSubmission) return;
+    try {
+        await saveAnswers();
+        const result = await api(`/api/exams/submissions/${state.activeSubmission.id}/finish/`, { method: "POST" });
+        state.activeSubmission.status = result.status;
+        renderActiveSubmission();
+        await refreshMySubmissions();
+        await loadSubmissionDetail(state.activeSubmission.id);
+        setStatus(`已交卷，总分 ${result.total_score}`, "success");
+    } catch (error) { setStatus(error.message, "error"); }
+}
+async function loadSubmissionDetail(submissionId) {
+    try { $("#submissionDetailOutput").textContent = pretty(await api(`/api/exams/submissions/${submissionId}/`)); setStatus(`提交 #${submissionId} 详情已加载`, "success"); }
+    catch (error) { setStatus(error.message, "error"); }
+}
+async function loadSubmissionAiFeedback(submissionId) {
+    try {
+        $("#submissionAiOutput").textContent = "AI 讲评生成中...";
+        const result = await api(`/api/exams/submissions/${submissionId}/ai-feedback/`, { method: "POST" });
+        $("#submissionAiOutput").textContent = result.content || pretty(result);
+        setStatus(`提交 #${submissionId} AI 讲评已生成`, "success");
+    } catch (error) {
+        $("#submissionAiOutput").textContent = error.message;
+        setStatus(error.message, "error");
+    }
+}
+async function refreshAll() {
+    try {
+        setStatus("正在刷新数据...");
+        await refreshOverview();
+        if (state.user) {
+            await refreshExams();
+            if (["teacher", "admin"].includes(state.user.role)) {
+                await refreshQuestions();
+                await refreshTeacherStats();
+            } else {
+                await refreshMySubmissions();
+            }
+        }
+        setStatus("数据已刷新", "success");
+    } catch (error) { setStatus(error.message, "error"); }
+}
+window.publishExam = publishExam;
+window.finishExam = finishExam;
+window.loadAnalytics = loadAnalytics;
+window.loadExamAiSummary = loadExamAiSummary;
+window.startExam = startExam;
+window.loadSubmissionDetail = loadSubmissionDetail;
+window.loadSubmissionAiFeedback = loadSubmissionAiFeedback;
+$("#loginForm").addEventListener("submit", handleLogin);
+$("#registerForm").addEventListener("submit", handleRegister);
+$("#resetCodeForm").addEventListener("submit", handleResetCode);
+$("#resetPasswordForm").addEventListener("submit", handleResetPassword);
+$("#logoutBtn").addEventListener("click", handleLogout);
+$("#refreshBtn").addEventListener("click", refreshAll);
+$("#questionForm").addEventListener("submit", handleQuestionCreate);
+$("#examForm").addEventListener("submit", handleExamCreate);
+$("#questionTypeSelect").addEventListener("change", syncQuestionFormMode);
+$("#saveAnswersBtn").addEventListener("click", saveAnswers);
+$("#finishSubmissionBtn").addEventListener("click", finishSubmission);
+$("#seedHintBtn").addEventListener("click", () => setStatus("演示教师：demo_teacher / Demo123456；演示学生：demo_student / Demo123456", "success"));
+syncQuestionFormMode();
+seedExamFormDefaults();
+restoreSession();
+</script>
+</body>
+</html>
+

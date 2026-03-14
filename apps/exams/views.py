@@ -610,6 +610,33 @@ def finish_submission(request: HttpRequest, submission_id: int) -> JsonResponse:
 
 @require_GET
 @login_required_json
+def my_submissions(request: HttpRequest) -> JsonResponse:
+    submissions = (
+        Submission.objects.filter(student=request.user)
+        .select_related("exam", "student")
+        .prefetch_related("answers__question")
+        .order_by("-created_at", "-id")
+    )
+    return JsonResponse(
+        {
+            "results": [
+                {
+                    **serialize_submission(item),
+                    "exam": {
+                        "id": item.exam_id,
+                        "title": item.exam.title,
+                        "status": item.exam.status,
+                    },
+                    "answers": serialize_submission_answers(item),
+                }
+                for item in submissions
+            ]
+        }
+    )
+
+
+@require_GET
+@login_required_json
 def submission_detail(request: HttpRequest, submission_id: int) -> JsonResponse:
     submission = get_object_or_404(
         Submission.objects.select_related("student", "exam").prefetch_related("answers__question__answers", "answers__question"),
@@ -668,3 +695,4 @@ def submission_ai_feedback(request: HttpRequest, submission_id: int) -> JsonResp
             },
         }
     )
+
