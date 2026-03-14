@@ -7,9 +7,25 @@
 - Django 5 项目基础配置
 - 自定义用户模型，支持管理员、教师、学生角色
 - 题库、考试、提交、答题、判题任务、通知等核心模型
+- 基于 Session 的注册、登录、登出、当前用户接口
+- 教师/管理员创建题目与考试，学生开始考试、保存答案、交卷
 - Redis/Celery 配置占位
 - QQ 邮箱 SMTP 配置入口
 - Windows 一键启动脚本
+
+## 当前 API
+
+- `POST /api/accounts/register/`
+- `POST /api/accounts/login/`
+- `POST /api/accounts/logout/`
+- `GET /api/accounts/me/`
+- `GET /api/accounts/stats/`
+- `GET/POST /api/exams/questions/`
+- `GET/POST /api/exams/exams/`
+- `POST /api/exams/exams/<id>/start/`
+- `POST /api/exams/submissions/<id>/answers/`
+- `POST /api/exams/submissions/<id>/finish/`
+- `GET /api/exams/submissions/<id>/`
 
 ## Windows 本地启动
 

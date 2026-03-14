@@ -15,6 +15,7 @@ class ExamApiTests(TestCase):
         self.student = User.objects.create_user(username="student", password="pass1234", role="student")
 
     def test_create_exam_and_complete_objective_submission(self):
+        self.client.force_login(self.teacher)
         question1_response = self.client.post(
             "/api/exams/questions/",
             data={
@@ -50,11 +51,10 @@ class ExamApiTests(TestCase):
             data={
                 "title": "Midterm",
                 "description": "objective test",
-                "starts_at": now.isoformat(),
+                "starts_at": (now - timedelta(minutes=5)).isoformat(),
                 "ends_at": (now + timedelta(hours=2)).isoformat(),
                 "duration_minutes": 120,
                 "status": "published",
-                "created_by_id": self.teacher.id,
                 "questions": [
                     {"question_id": question1_id, "order": 1, "score": 40},
                     {"question_id": question2_id, "order": 2, "score": 60},
@@ -65,9 +65,11 @@ class ExamApiTests(TestCase):
         self.assertEqual(exam_response.status_code, 201)
         exam_id = exam_response.json()["id"]
 
+        self.client.logout()
+        self.client.force_login(self.student)
+
         start_response = self.client.post(
             f"/api/exams/exams/{exam_id}/start/",
-            data={"student_id": self.student.id},
             content_type="application/json",
         )
         self.assertEqual(start_response.status_code, 201)
@@ -98,6 +100,7 @@ class ExamApiTests(TestCase):
         self.assertEqual(len(detail_response.json()["answers"]), 2)
 
     def test_programming_question_sets_submission_to_judging(self):
+        self.client.force_login(self.teacher)
         question_response = self.client.post(
             "/api/exams/questions/",
             data={
@@ -116,10 +119,9 @@ class ExamApiTests(TestCase):
             "/api/exams/exams/",
             data={
                 "title": "Code Exam",
-                "starts_at": now.isoformat(),
+                "starts_at": (now - timedelta(minutes=5)).isoformat(),
                 "ends_at": (now + timedelta(hours=1)).isoformat(),
                 "status": "published",
-                "created_by_id": self.teacher.id,
                 "questions": [{"question_id": question_id, "score": 100}],
             },
             content_type="application/json",
@@ -127,9 +129,11 @@ class ExamApiTests(TestCase):
         self.assertEqual(exam_response.status_code, 201)
         exam_id = exam_response.json()["id"]
 
+        self.client.logout()
+        self.client.force_login(self.student)
+
         start_response = self.client.post(
             f"/api/exams/exams/{exam_id}/start/",
-            data={"student_id": self.student.id},
             content_type="application/json",
         )
         self.assertEqual(start_response.status_code, 201)
@@ -149,3 +153,16 @@ class ExamApiTests(TestCase):
         self.assertEqual(finish_response.status_code, 200)
         self.assertEqual(finish_response.json()["status"], Submission.Status.JUDGING)
         self.assertEqual(finish_response.json()["pending_programming"], 1)
+
+    def test_student_cannot_create_exam(self):
+        self.client.force_login(self.student)
+        response = self.client.post(
+            "/api/exams/exams/",
+            data={
+                "title": "Blocked",
+                "starts_at": timezone.now().isoformat(),
+                "ends_at": (timezone.now() + timedelta(hours=1)).isoformat(),
+            },
+            content_type="application/json",
+        )
+        self.assertEqual(response.status_code, 403)

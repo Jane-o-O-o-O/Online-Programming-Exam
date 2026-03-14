@@ -10,6 +10,8 @@ from django.utils.dateparse import parse_datetime
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_GET, require_http_methods
 
+from apps.accounts.permissions import login_required_json, role_required, user_can_manage_exams
+
 from .models import Answer, Exam, ExamQuestion, KnowledgeTag, Question, Submission
 
 User = get_user_model()
@@ -54,7 +56,11 @@ def serialize_exam(exam: Exam) -> dict:
         "ends_at": exam.ends_at.isoformat(),
         "duration_minutes": exam.duration_minutes,
         "status": exam.status,
-        "created_by_id": exam.created_by_id,
+        "created_by": {
+            "id": exam.created_by_id,
+            "username": exam.created_by.username,
+            "role": exam.created_by.role,
+        },
         "question_count": exam.exam_questions.count(),
         "questions": [
             {
@@ -117,7 +123,12 @@ def parse_exam_datetime(value, field_name: str):
     return parsed
 
 
+def ensure_submission_access(user, submission: Submission) -> bool:
+    return submission.student_id == user.id or user_can_manage_exams(user)
+
+
 @require_GET
+@login_required_json
 def overview(_request: HttpRequest) -> JsonResponse:
     return JsonResponse(
         {
@@ -130,9 +141,13 @@ def overview(_request: HttpRequest) -> JsonResponse:
 
 @csrf_exempt
 @require_http_methods(["GET", "POST"])
+@login_required_json
 def questions(request: HttpRequest) -> JsonResponse:
     if request.method == "GET":
         return JsonResponse({"results": [serialize_question(item) for item in Question.objects.prefetch_related("tags").order_by("id")]})
+
+    if not user_can_manage_exams(request.user):
+        return json_error("permission denied", 403)
 
     try:
         payload = parse_json(request)
@@ -166,10 +181,14 @@ def questions(request: HttpRequest) -> JsonResponse:
 
 @csrf_exempt
 @require_http_methods(["GET", "POST"])
+@login_required_json
 def exams(request: HttpRequest) -> JsonResponse:
     if request.method == "GET":
         queryset = Exam.objects.select_related("created_by").prefetch_related("exam_questions__question").order_by("id")
         return JsonResponse({"results": [serialize_exam(item) for item in queryset]})
+
+    if not user_can_manage_exams(request.user):
+        return json_error("permission denied", 403)
 
     try:
         payload = parse_json(request)
@@ -178,23 +197,21 @@ def exams(request: HttpRequest) -> JsonResponse:
     except ValueError as exc:
         return json_error(str(exc))
 
-    required_fields = ["title", "created_by_id"]
-    missing = [field for field in required_fields if not payload.get(field)]
-    if missing:
-        return json_error(f"missing required fields: {', '.join(missing)}")
+    title = payload.get("title")
+    if not title:
+        return json_error("title is required")
 
-    creator = get_object_or_404(User, pk=payload["created_by_id"])
     question_items = payload.get("questions", [])
 
     with transaction.atomic():
         exam = Exam.objects.create(
-            title=payload["title"],
+            title=title,
             description=payload.get("description", ""),
             starts_at=starts_at,
             ends_at=ends_at,
             duration_minutes=payload.get("duration_minutes", 120),
             status=payload.get("status", Exam.Status.DRAFT),
-            created_by=creator,
+            created_by=request.user,
         )
         for index, item in enumerate(question_items, start=1):
             question = get_object_or_404(Question, pk=item.get("question_id"))
@@ -205,28 +222,22 @@ def exams(request: HttpRequest) -> JsonResponse:
                 score=Decimal(str(item.get("score", 0))),
             )
 
-    exam = Exam.objects.prefetch_related("exam_questions__question").get(pk=exam.pk)
+    exam = Exam.objects.select_related("created_by").prefetch_related("exam_questions__question").get(pk=exam.pk)
     return JsonResponse(serialize_exam(exam), status=201)
 
 
 @csrf_exempt
 @require_http_methods(["POST"])
+@role_required(User.Role.STUDENT)
 def start_submission(request: HttpRequest, exam_id: int) -> JsonResponse:
-    exam = get_object_or_404(Exam.objects.prefetch_related("exam_questions__question"), pk=exam_id)
+    exam = get_object_or_404(Exam.objects.select_related("created_by").prefetch_related("exam_questions__question"), pk=exam_id)
     if exam.status != Exam.Status.PUBLISHED:
         return json_error("exam is not published", status=409)
+    now = timezone.now()
+    if exam.starts_at > now or exam.ends_at < now:
+        return json_error("exam is not currently active", status=409)
 
-    try:
-        payload = parse_json(request)
-    except ValueError as exc:
-        return json_error(str(exc))
-
-    student_id = payload.get("student_id")
-    if not student_id:
-        return json_error("student_id is required")
-
-    student = get_object_or_404(User, pk=student_id)
-    submission, created = Submission.objects.get_or_create(exam=exam, student=student)
+    submission, created = Submission.objects.get_or_create(exam=exam, student=request.user)
     if not created and submission.status != Submission.Status.IN_PROGRESS:
         return json_error("submission already finished", status=409)
 
@@ -243,8 +254,11 @@ def start_submission(request: HttpRequest, exam_id: int) -> JsonResponse:
 
 @csrf_exempt
 @require_http_methods(["POST"])
+@login_required_json
 def save_answers(request: HttpRequest, submission_id: int) -> JsonResponse:
-    submission = get_object_or_404(Submission.objects.select_related("exam"), pk=submission_id)
+    submission = get_object_or_404(Submission.objects.select_related("exam", "student"), pk=submission_id)
+    if not ensure_submission_access(request.user, submission):
+        return json_error("permission denied", 403)
     if submission.status != Submission.Status.IN_PROGRESS:
         return json_error("submission is not editable", status=409)
 
@@ -285,11 +299,14 @@ def save_answers(request: HttpRequest, submission_id: int) -> JsonResponse:
 
 @csrf_exempt
 @require_http_methods(["POST"])
+@login_required_json
 def finish_submission(_request: HttpRequest, submission_id: int) -> JsonResponse:
     submission = get_object_or_404(
-        Submission.objects.select_related("exam").prefetch_related("answers__question", "exam__exam_questions__question"),
+        Submission.objects.select_related("exam", "student").prefetch_related("answers__question", "exam__exam_questions__question"),
         pk=submission_id,
     )
+    if not ensure_submission_access(_request.user, submission):
+        return json_error("permission denied", 403)
     if submission.status != Submission.Status.IN_PROGRESS:
         return json_error("submission already finished", status=409)
 
@@ -321,11 +338,15 @@ def finish_submission(_request: HttpRequest, submission_id: int) -> JsonResponse
 
 
 @require_GET
-def submission_detail(_request: HttpRequest, submission_id: int) -> JsonResponse:
+@login_required_json
+def submission_detail(request: HttpRequest, submission_id: int) -> JsonResponse:
     submission = get_object_or_404(
         Submission.objects.select_related("student", "exam").prefetch_related("answers__question"),
         pk=submission_id,
     )
+    if not ensure_submission_access(request.user, submission):
+        return json_error("permission denied", 403)
+
     return JsonResponse(
         {
             "id": submission.id,
@@ -345,3 +366,5 @@ def submission_detail(_request: HttpRequest, submission_id: int) -> JsonResponse
             ],
         }
     )
+
+
