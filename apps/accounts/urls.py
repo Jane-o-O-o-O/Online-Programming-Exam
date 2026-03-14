@@ -1,0 +1,7 @@
+﻿from django.urls import path
+
+from .views import stats
+
+urlpatterns = [
+    path("stats/", stats, name="account-stats"),
+]

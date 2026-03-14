@@ -1,0 +1,4 @@
+Django==5.2.6
+celery==5.5.3
+redis==6.4.0
+PyMySQL==1.1.1

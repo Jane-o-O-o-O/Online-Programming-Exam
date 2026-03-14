@@ -1,0 +1,11 @@
+.venv/
+__pycache__/
+*.pyc
+.deps/
+.packages/
+.tmp/
+db.sqlite3
+.env
+staticfiles/
+media/
+_docx_unzip/
