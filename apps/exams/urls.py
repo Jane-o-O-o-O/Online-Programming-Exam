@@ -8,6 +8,7 @@ from .views import (
     exams,
     finish_exam,
     finish_submission,
+    import_questions,
     my_submissions,
     overview,
     publish_exam,
@@ -22,6 +23,7 @@ from .views import (
 urlpatterns = [
     path("overview/", overview, name="exam-overview"),
     path("questions/", questions, name="question-list-create"),
+    path("questions/import/", import_questions, name="question-import"),
     path("questions/<int:question_id>/", question_detail, name="question-detail"),
     path("exams/", exams, name="exam-list-create"),
     path("exams/<int:exam_id>/", exam_detail, name="exam-detail"),

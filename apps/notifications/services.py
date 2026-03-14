@@ -44,6 +44,18 @@ def increment_password_reset_attempts(email: str):
     return state
 
 
+def create_site_notification(*, user, title: str, content: str, category: str = Notification.Category.SYSTEM) -> Notification:
+    return Notification.objects.create(
+        user=user,
+        category=category,
+        title=title,
+        content=content,
+        recipient=user.email or "",
+        status=Notification.Status.SENT,
+        sent_at=timezone.now(),
+    )
+
+
 def send_notification_email(*, user, subject: str, body: str, recipient: str, category: str = Notification.Category.EMAIL) -> Notification:
     notification = Notification.objects.create(
         user=user,

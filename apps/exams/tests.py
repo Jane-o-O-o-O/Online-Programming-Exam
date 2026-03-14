@@ -333,6 +333,67 @@ class ExamApiTests(TestCase):
         self.assertContains(response, "在线编程考试控制台")
         self.assertContains(response, "/api/exams/my-submissions/")
 
+    def test_teacher_can_bulk_import_questions(self):
+        self.client.force_login(self.teacher)
+        response = self.client.post(
+            "/api/exams/questions/import/",
+            data={
+                "questions": [
+                    {
+                        "title": "Import Single",
+                        "question_type": "single",
+                        "prompt": "1+1?",
+                        "options": ["1", "2"],
+                        "correct_answer": {"value": "2"},
+                    },
+                    {
+                        "title": "Import Program",
+                        "question_type": "program",
+                        "prompt": "Read n and print n*2",
+                        "language": "python",
+                        "correct_answer": {"cases": [{"input": "2\n", "output": "4\n"}]},
+                    },
+                ]
+            },
+            content_type="application/json",
+        )
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.json()["count"], 2)
+
+    def test_teacher_can_delete_exam_without_submissions(self):
+        self.client.force_login(self.teacher)
+        question_id = self.create_question(
+            title="Delete Exam Question",
+            question_type="single",
+            prompt="1+1?",
+            options=["1", "2"],
+            correct_answer={"value": "2"},
+        )
+        exam_id = self.create_exam([{"question_id": question_id, "score": 100}], status="draft", title="Delete Exam")
+
+        response = self.client.delete(f"/api/exams/exams/{exam_id}/")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["message"], "exam deleted")
+
+    def test_exam_with_submissions_cannot_be_deleted(self):
+        self.client.force_login(self.teacher)
+        question_id = self.create_question(
+            title="Protected Exam Question",
+            question_type="single",
+            prompt="1+1?",
+            options=["1", "2"],
+            correct_answer={"value": "2"},
+        )
+        exam_id = self.create_exam([{"question_id": question_id, "score": 100}], title="Protected Exam")
+
+        self.client.logout()
+        self.client.force_login(self.student)
+        self.client.post(f"/api/exams/exams/{exam_id}/start/", content_type="application/json")
+
+        self.client.logout()
+        self.client.force_login(self.teacher)
+        response = self.client.delete(f"/api/exams/exams/{exam_id}/")
+        self.assertEqual(response.status_code, 409)
     @override_settings(SILICONFLOW_API_KEY="test-key", SILICONFLOW_MODEL="Qwen/Qwen2.5-7B-Instruct", SILICONFLOW_BASE_URL="https://api.siliconflow.cn/v1")
     @patch("apps.exams.llm.urlopen")
     def test_teacher_can_get_exam_ai_summary(self, mock_urlopen):
@@ -368,6 +429,67 @@ class ExamApiTests(TestCase):
         self.assertEqual(payload["model"], "Qwen/Qwen2.5-7B-Instruct")
         self.assertIn("总体表现", payload["content"])
 
+    def test_teacher_can_bulk_import_questions(self):
+        self.client.force_login(self.teacher)
+        response = self.client.post(
+            "/api/exams/questions/import/",
+            data={
+                "questions": [
+                    {
+                        "title": "Import Single",
+                        "question_type": "single",
+                        "prompt": "1+1?",
+                        "options": ["1", "2"],
+                        "correct_answer": {"value": "2"},
+                    },
+                    {
+                        "title": "Import Program",
+                        "question_type": "program",
+                        "prompt": "Read n and print n*2",
+                        "language": "python",
+                        "correct_answer": {"cases": [{"input": "2\n", "output": "4\n"}]},
+                    },
+                ]
+            },
+            content_type="application/json",
+        )
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.json()["count"], 2)
+
+    def test_teacher_can_delete_exam_without_submissions(self):
+        self.client.force_login(self.teacher)
+        question_id = self.create_question(
+            title="Delete Exam Question",
+            question_type="single",
+            prompt="1+1?",
+            options=["1", "2"],
+            correct_answer={"value": "2"},
+        )
+        exam_id = self.create_exam([{"question_id": question_id, "score": 100}], status="draft", title="Delete Exam")
+
+        response = self.client.delete(f"/api/exams/exams/{exam_id}/")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["message"], "exam deleted")
+
+    def test_exam_with_submissions_cannot_be_deleted(self):
+        self.client.force_login(self.teacher)
+        question_id = self.create_question(
+            title="Protected Exam Question",
+            question_type="single",
+            prompt="1+1?",
+            options=["1", "2"],
+            correct_answer={"value": "2"},
+        )
+        exam_id = self.create_exam([{"question_id": question_id, "score": 100}], title="Protected Exam")
+
+        self.client.logout()
+        self.client.force_login(self.student)
+        self.client.post(f"/api/exams/exams/{exam_id}/start/", content_type="application/json")
+
+        self.client.logout()
+        self.client.force_login(self.teacher)
+        response = self.client.delete(f"/api/exams/exams/{exam_id}/")
+        self.assertEqual(response.status_code, 409)
     @override_settings(SILICONFLOW_API_KEY="test-key", SILICONFLOW_MODEL="Qwen/Qwen2.5-7B-Instruct", SILICONFLOW_BASE_URL="https://api.siliconflow.cn/v1")
     @patch("apps.exams.llm.urlopen")
     def test_student_can_get_submission_ai_feedback(self, mock_urlopen):
@@ -416,3 +538,4 @@ class ExamApiTests(TestCase):
 
         response = self.client.post(f"/api/exams/exams/{exam_id}/analytics/ai-summary/", content_type="application/json")
         self.assertEqual(response.status_code, 503)
+

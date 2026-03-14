@@ -12,6 +12,7 @@ from django.views.decorators.http import require_GET, require_http_methods
 
 from apps.accounts.permissions import login_required_json, role_required, user_can_manage_exams
 from apps.judge.services import judge_answer
+from apps.notifications.services import create_site_notification
 
 from .llm import LLMServiceError, generate_exam_analytics_summary, generate_submission_feedback, llm_runtime
 from .models import Answer, Exam, ExamQuestion, KnowledgeTag, Question, Submission
@@ -239,6 +240,45 @@ def sync_question_tags(question: Question, tag_names) -> None:
     question.tags.set(tags)
 
 
+def create_question_from_payload(payload: dict) -> Question:
+    title = payload.get("title")
+    question_type = payload.get("question_type")
+    prompt = payload.get("prompt")
+    if not title or not question_type or not prompt:
+        raise ValueError("title, question_type and prompt are required")
+
+    question = Question.objects.create(
+        title=title,
+        question_type=question_type,
+        difficulty=payload.get("difficulty", Question.Difficulty.MEDIUM),
+        language=payload.get("language", ""),
+        prompt=prompt,
+        options=payload.get("options", []),
+        correct_answer=payload.get("correct_answer", {}),
+        reference_answer=payload.get("reference_answer", ""),
+    )
+    sync_question_tags(question, payload.get("tags", []))
+    return question
+
+
+def notify_exam_published(exam: Exam) -> int:
+    students = User.objects.filter(role=User.Role.STUDENT, is_active=True).order_by("id")
+    count = 0
+    for student in students:
+        create_site_notification(
+            user=student,
+            title=f"新考试已发布：{exam.title}",
+            content=(
+                f"考试《{exam.title}》已发布。"
+                f"开始时间：{exam.starts_at.isoformat()}，结束时间：{exam.ends_at.isoformat()}。"
+                f"请在规定时间内完成作答。"
+            ),
+            category="exam",
+        )
+        count += 1
+    return count
+
+
 def replace_exam_questions(exam: Exam, question_items) -> None:
     exam.exam_questions.all().delete()
     for index, item in enumerate(question_items or [], start=1):
@@ -252,7 +292,6 @@ def replace_exam_questions(exam: Exam, question_items) -> None:
 
 
 @require_GET
-@login_required_json
 def overview(_request: HttpRequest) -> JsonResponse:
     runtime = llm_runtime()
     return JsonResponse(
@@ -286,25 +325,42 @@ def questions(request: HttpRequest) -> JsonResponse:
     except ValueError as exc:
         return json_error(str(exc))
 
-    title = payload.get("title")
-    question_type = payload.get("question_type")
-    prompt = payload.get("prompt")
-    if not title or not question_type or not prompt:
-        return json_error("title, question_type and prompt are required")
-
-    question = Question.objects.create(
-        title=title,
-        question_type=question_type,
-        difficulty=payload.get("difficulty", Question.Difficulty.MEDIUM),
-        language=payload.get("language", ""),
-        prompt=prompt,
-        options=payload.get("options", []),
-        correct_answer=payload.get("correct_answer", {}),
-        reference_answer=payload.get("reference_answer", ""),
-    )
-    sync_question_tags(question, payload.get("tags", []))
+    try:
+        question = create_question_from_payload(payload)
+    except ValueError as exc:
+        return json_error(str(exc))
 
     return JsonResponse(serialize_question(question), status=201)
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+@login_required_json
+def import_questions(request: HttpRequest) -> JsonResponse:
+    if not user_can_manage_exams(request.user):
+        return json_error("permission denied", 403)
+
+    try:
+        payload = parse_json(request)
+    except ValueError as exc:
+        return json_error(str(exc))
+
+    if isinstance(payload, list):
+        question_items = payload
+    else:
+        question_items = payload.get("questions", [])
+    if not isinstance(question_items, list) or not question_items:
+        return json_error("questions must be a non-empty list")
+
+    created_questions = []
+    try:
+        with transaction.atomic():
+            for item in question_items:
+                created_questions.append(create_question_from_payload(item))
+    except ValueError as exc:
+        return json_error(str(exc))
+
+    return JsonResponse({"count": len(created_questions), "results": [serialize_question(item) for item in created_questions]}, status=201)
 
 
 @csrf_exempt
@@ -382,7 +438,7 @@ def exams(request: HttpRequest) -> JsonResponse:
 
 
 @csrf_exempt
-@require_http_methods(["GET", "PUT"])
+@require_http_methods(["GET", "PUT", "DELETE"])
 @login_required_json
 def exam_detail(request: HttpRequest, exam_id: int) -> JsonResponse:
     exam = get_object_or_404(Exam.objects.select_related("created_by").prefetch_related("exam_questions__question"), pk=exam_id)
@@ -392,6 +448,12 @@ def exam_detail(request: HttpRequest, exam_id: int) -> JsonResponse:
 
     if not user_can_manage_exams(request.user):
         return json_error("permission denied", 403)
+
+    if request.method == "DELETE":
+        if exam.submissions.exists():
+            return json_error("exam already has submissions and cannot be deleted", 409)
+        exam.delete()
+        return JsonResponse({"message": "exam deleted"})
 
     try:
         payload = parse_json(request)
@@ -426,9 +488,14 @@ def publish_exam(request: HttpRequest, exam_id: int) -> JsonResponse:
     if not user_can_manage_exams(request.user):
         return json_error("permission denied", 403)
     exam = get_object_or_404(Exam, pk=exam_id)
+    if exam.status == Exam.Status.PUBLISHED:
+        return json_error("exam is already published", 409)
+    if exam.status == Exam.Status.FINISHED:
+        return json_error("finished exam cannot be published again", 409)
     exam.status = Exam.Status.PUBLISHED
     exam.save(update_fields=["status", "updated_at"])
-    return JsonResponse({"message": "exam published", "status": exam.status})
+    notified_students = notify_exam_published(exam)
+    return JsonResponse({"message": "exam published", "status": exam.status, "notified_students": notified_students})
 
 
 @csrf_exempt
@@ -438,6 +505,8 @@ def finish_exam(request: HttpRequest, exam_id: int) -> JsonResponse:
     if not user_can_manage_exams(request.user):
         return json_error("permission denied", 403)
     exam = get_object_or_404(Exam, pk=exam_id)
+    if exam.status == Exam.Status.FINISHED:
+        return json_error("exam is already finished", 409)
     exam.status = Exam.Status.FINISHED
     exam.ends_at = timezone.now()
     exam.save(update_fields=["status", "ends_at", "updated_at"])
@@ -695,4 +764,13 @@ def submission_ai_feedback(request: HttpRequest, submission_id: int) -> JsonResp
             },
         }
     )
+
+
+
+
+
+
+
+
+
 

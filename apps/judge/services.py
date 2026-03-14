@@ -7,9 +7,10 @@ from decimal import Decimal
 from pathlib import Path
 
 from django.conf import settings
+from django.db import transaction
 from django.utils import timezone
 
-from apps.exams.models import Answer, ExamQuestion
+from apps.exams.models import Answer, ExamQuestion, Submission
 
 from .models import JudgeTask
 
@@ -54,7 +55,7 @@ def run_python_case(source_code: str, case_input: str, timeout_seconds: int) -> 
         shutil.rmtree(work_dir, ignore_errors=True)
 
 
-def judge_program_answer(answer: Answer, exam_question: ExamQuestion) -> Decimal:
+def get_or_create_judge_task(answer: Answer) -> JudgeTask:
     task, _ = JudgeTask.objects.get_or_create(
         answer=answer,
         defaults={
@@ -63,9 +64,60 @@ def judge_program_answer(answer: Answer, exam_question: ExamQuestion) -> Decimal
             "status": JudgeTask.Status.QUEUED,
         },
     )
+    return task
+
+
+def update_submission_after_judge(submission: Submission) -> Submission:
+    answers = list(submission.answers.select_related("question").all())
+    total_score = sum((Decimal(item.auto_score) for item in answers), Decimal("0"))
+    pending_programming = sum(
+        1 for item in answers if item.question.question_type == item.question.QuestionType.PROGRAM and item.judge_status == Answer.JudgeStatus.PENDING
+    )
+
+    submission.total_score = total_score
+    if submission.submitted_at:
+        submission.status = Submission.Status.JUDGING if pending_programming else Submission.Status.COMPLETED
+    submission.save(update_fields=["total_score", "status", "updated_at"])
+    return submission
+
+
+def enqueue_async_judge(answer: Answer, task: JudgeTask | None = None) -> bool:
+    from .tasks import judge_answer_task
+
+    task = task or get_or_create_judge_task(answer)
+    task.status = JudgeTask.Status.QUEUED
+    task.result_payload = {"message": "queued for async judge"}
+    task.started_at = None
+    task.finished_at = None
+    task.save(update_fields=["status", "result_payload", "started_at", "finished_at"])
+
+    answer.judge_status = Answer.JudgeStatus.PENDING
+    answer.judge_feedback = "编程题已进入异步判题队列"
+    answer.auto_score = Decimal("0")
+    answer.save(update_fields=["judge_status", "judge_feedback", "auto_score", "updated_at"])
+
+    try:
+        judge_answer_task.delay(answer.id)
+        return True
+    except Exception as exc:
+        task.status = JudgeTask.Status.FAILED
+        task.result_payload = {"message": f"enqueue failed: {exc}"}
+        task.finished_at = timezone.now()
+        task.save(update_fields=["status", "result_payload", "finished_at"])
+        answer.judge_status = Answer.JudgeStatus.RUNTIME_ERROR
+        answer.judge_feedback = f"异步判题入队失败: {exc}"
+        answer.auto_score = Decimal("0")
+        answer.save(update_fields=["judge_status", "judge_feedback", "auto_score", "updated_at"])
+        return False
+
+
+def judge_program_answer(answer: Answer, exam_question: ExamQuestion) -> Decimal:
+    task = get_or_create_judge_task(answer)
     task.status = JudgeTask.Status.RUNNING
     task.started_at = timezone.now()
-    task.save(update_fields=["status", "started_at"])
+    task.finished_at = None
+    task.result_payload = {}
+    task.save(update_fields=["status", "started_at", "finished_at", "result_payload"])
 
     question = answer.question
     cases = question.correct_answer.get("cases", []) if isinstance(question.correct_answer, dict) else []
@@ -163,22 +215,31 @@ def judge_program_answer(answer: Answer, exam_question: ExamQuestion) -> Decimal
 def judge_answer(answer: Answer, exam_question: ExamQuestion) -> Decimal:
     if answer.question.question_type != answer.question.QuestionType.PROGRAM:
         return Decimal("0")
+
     if settings.JUDGE_EXECUTION_MODE == "local":
         return judge_program_answer(answer, exam_question)
 
-    task, _ = JudgeTask.objects.get_or_create(
-        answer=answer,
-        defaults={
-            "language": answer.question.language or "python",
-            "docker_image": "",
-            "status": JudgeTask.Status.QUEUED,
-        },
-    )
-    task.status = JudgeTask.Status.QUEUED
-    task.result_payload = {"message": "queued for async judge"}
-    task.save(update_fields=["status", "result_payload"])
+    task = get_or_create_judge_task(answer)
+    queued = enqueue_async_judge(answer, task)
+    answer.refresh_from_db()
+    return Decimal(answer.auto_score) if queued and answer.judge_status != Answer.JudgeStatus.PENDING else Decimal("0")
+
+
+@transaction.atomic
+def retry_judge_task(task: JudgeTask) -> JudgeTask:
+    answer = task.answer
+    exam_question = ExamQuestion.objects.select_related("question").get(exam=answer.submission.exam, question=answer.question)
     answer.judge_status = Answer.JudgeStatus.PENDING
-    answer.judge_feedback = "编程题已进入异步判题队列"
+    answer.judge_feedback = "重新进入判题流程"
     answer.auto_score = Decimal("0")
     answer.save(update_fields=["judge_status", "judge_feedback", "auto_score", "updated_at"])
-    return Decimal("0")
+
+    if settings.JUDGE_EXECUTION_MODE == "local":
+        judge_program_answer(answer, exam_question)
+        update_submission_after_judge(answer.submission)
+    else:
+        enqueue_async_judge(answer, task)
+        update_submission_after_judge(answer.submission)
+
+    task.refresh_from_db()
+    return task
