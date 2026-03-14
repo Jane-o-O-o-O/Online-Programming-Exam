@@ -56,6 +56,20 @@ Copy-Item .env.example .env
 - `http://127.0.0.1:8000/api/accounts/stats/`
 - `http://127.0.0.1:8000/api/exams/overview/`
 
+## 一键演示数据
+
+```powershell
+python manage.py seed_demo
+```
+
+默认会创建：
+
+- 教师：`demo_teacher / Demo123456`
+- 学生：`demo_student / Demo123456`
+- 已发布演示考试：`系统演示考试`
+
+本地开发模式下，编程题会直接在当前机器上同步判题，不依赖 Docker 或 Celery。
+
 ## 手动启动
 
 ```powershell

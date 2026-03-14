@@ -11,6 +11,7 @@ from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_GET, require_http_methods
 
 from apps.accounts.permissions import login_required_json, role_required, user_can_manage_exams
+from apps.judge.services import judge_answer
 
 from .models import Answer, Exam, ExamQuestion, KnowledgeTag, Question, Submission
 
@@ -101,11 +102,7 @@ def score_objective_answer(answer: Answer, exam_question: ExamQuestion) -> Decim
         actual = normalize_multiple_answer(answer.answer_payload)
         is_correct = actual == expected
     else:
-        answer.judge_status = Answer.JudgeStatus.PENDING
-        answer.judge_feedback = "编程题待异步判题"
-        answer.auto_score = Decimal("0")
-        answer.save(update_fields=["judge_status", "judge_feedback", "auto_score", "updated_at"])
-        return Decimal("0")
+        return judge_answer(answer, exam_question)
 
     answer.judge_status = Answer.JudgeStatus.ACCEPTED if is_correct else Answer.JudgeStatus.WRONG
     answer.judge_feedback = "答案正确" if is_correct else "答案错误"
@@ -144,7 +141,9 @@ def overview(_request: HttpRequest) -> JsonResponse:
 @login_required_json
 def questions(request: HttpRequest) -> JsonResponse:
     if request.method == "GET":
-        return JsonResponse({"results": [serialize_question(item) for item in Question.objects.prefetch_related("tags").order_by("id")]})
+        include_answer = user_can_manage_exams(request.user)
+        results = [serialize_question(item, include_answer=include_answer) for item in Question.objects.prefetch_related("tags").order_by("id")]
+        return JsonResponse({"results": results})
 
     if not user_can_manage_exams(request.user):
         return json_error("permission denied", 403)
@@ -300,12 +299,12 @@ def save_answers(request: HttpRequest, submission_id: int) -> JsonResponse:
 @csrf_exempt
 @require_http_methods(["POST"])
 @login_required_json
-def finish_submission(_request: HttpRequest, submission_id: int) -> JsonResponse:
+def finish_submission(request: HttpRequest, submission_id: int) -> JsonResponse:
     submission = get_object_or_404(
         Submission.objects.select_related("exam", "student").prefetch_related("answers__question", "exam__exam_questions__question"),
         pk=submission_id,
     )
-    if not ensure_submission_access(_request.user, submission):
+    if not ensure_submission_access(request.user, submission):
         return json_error("permission denied", 403)
     if submission.status != Submission.Status.IN_PROGRESS:
         return json_error("submission already finished", status=409)
@@ -319,7 +318,8 @@ def finish_submission(_request: HttpRequest, submission_id: int) -> JsonResponse
         if answer is None:
             continue
         total_score += score_objective_answer(answer, exam_question)
-        if exam_question.question.question_type == Question.QuestionType.PROGRAM:
+        answer.refresh_from_db()
+        if exam_question.question.question_type == Question.QuestionType.PROGRAM and answer.judge_status == Answer.JudgeStatus.PENDING:
             pending_programming += 1
 
     submission.total_score = total_score
@@ -341,7 +341,7 @@ def finish_submission(_request: HttpRequest, submission_id: int) -> JsonResponse
 @login_required_json
 def submission_detail(request: HttpRequest, submission_id: int) -> JsonResponse:
     submission = get_object_or_404(
-        Submission.objects.select_related("student", "exam").prefetch_related("answers__question"),
+        Submission.objects.select_related("student", "exam").prefetch_related("answers__question__answers", "answers__question"),
         pk=submission_id,
     )
     if not ensure_submission_access(request.user, submission):
@@ -361,10 +361,9 @@ def submission_detail(request: HttpRequest, submission_id: int) -> JsonResponse:
                     "judge_status": item.judge_status,
                     "auto_score": float(item.auto_score),
                     "judge_feedback": item.judge_feedback,
+                    "judge_result": item.judge_task.result_payload if hasattr(item, "judge_task") else {},
                 }
-                for item in submission.answers.all().order_by("question_id")
+                for item in submission.answers.select_related("question").all().order_by("question_id")
             ],
         }
     )
-
-

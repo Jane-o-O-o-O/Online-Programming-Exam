@@ -4,6 +4,7 @@ __pycache__/
 .deps/
 .packages/
 .tmp/
+.judge_tmp/
 db.sqlite3
 .env
 staticfiles/
