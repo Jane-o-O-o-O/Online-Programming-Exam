@@ -24,7 +24,13 @@
 - `POST /api/accounts/password-reset-code/`
 - `POST /api/accounts/password-reset/`
 - `GET/POST /api/exams/questions/`
+- `GET/PUT/DELETE /api/exams/questions/<id>/`
 - `GET/POST /api/exams/exams/`
+- `GET/PUT /api/exams/exams/<id>/`
+- `POST /api/exams/exams/<id>/publish/`
+- `POST /api/exams/exams/<id>/finish/`
+- `GET /api/exams/exams/<id>/submissions/`
+- `GET /api/exams/exams/<id>/analytics/`
 - `POST /api/exams/exams/<id>/start/`
 - `POST /api/exams/submissions/<id>/answers/`
 - `POST /api/exams/submissions/<id>/finish/`
