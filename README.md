@@ -1,6 +1,6 @@
 ﻿# 在线编程考试系统
 
-基于技术文档先落地的基础版工程骨架，面向 Windows 本地开发环境。
+基于技术文档落地的可运行版本，面向 Windows 本地开发环境。
 
 ## 当前实现
 
@@ -8,15 +8,14 @@
 - 自定义用户模型，支持管理员、教师、学生角色
 - 题库、考试、提交、答题、判题任务、通知等核心模型
 - 基于 Session 的注册、登录、登出、当前用户接口
-- 教师/管理员创建题目与考试，学生开始考试、保存答案、交卷
-- 题库批量导入、考试删除、成绩分析等教师后台能力
+- 教师/管理员创建题目、批量导题、创建考试、发布考试、结束考试、删除无提交考试
+- 学生开始考试、保存答案、交卷、查看提交详情与 AI 讲评
 - QQ 邮箱验证码发送与密码重置流程
-- 本地同步编程题判题
-- Celery 异步判题链路已接入业务流，可查看任务列表并重判
 - 硅基流动大模型接入，可生成考试 AI 分析和提交 AI 讲评
 - 站内通知中心，支持考试发布通知、列表查询、已读/全部已读
-- 原生 Django 模板控制台页面 `/app/`，可直接完成教师和学生主流程
-- Windows 一键启动脚本
+- 判题支持 4 种模式：`local`、`docker`、`celery`、`celery_docker`
+- 教师可查看判题任务列表并重判
+- 原生 Django 模板控制台页面 `/app/`
 
 ## 当前 API
 
@@ -130,26 +129,41 @@ SILICONFLOW_MODEL=Qwen/Qwen2.5-7B-Instruct
 SILICONFLOW_TIMEOUT=60
 ```
 
-调用说明：
-
-- 教师端生成考试 AI 分析：`POST /api/exams/exams/<id>/analytics/ai-summary/`
-- 学生或教师生成提交 AI 讲评：`POST /api/exams/submissions/<id>/ai-feedback/`
-- 系统概览接口 `GET /api/exams/overview/` 会返回当前 LLM 是否已配置
-
 ## 判题模式配置
 
-本地同步判题：
+### 本地同步判题
 
 ```env
 JUDGE_EXECUTION_MODE=local
 ```
 
-Celery 异步判题：
+### Docker 同步沙箱判题
+
+```env
+JUDGE_EXECUTION_MODE=docker
+JUDGE_DOCKER_COMMAND=docker
+JUDGE_DOCKER_IMAGE=python:3.13-slim
+JUDGE_DOCKER_MEMORY_LIMIT=128m
+JUDGE_DOCKER_CPU_LIMIT=0.5
+JUDGE_DOCKER_EXTRA_TIMEOUT_SECONDS=5
+```
+
+### Celery 异步本地判题
 
 ```env
 JUDGE_EXECUTION_MODE=celery
 CELERY_BROKER_URL=redis://127.0.0.1:6379/0
 CELERY_RESULT_BACKEND=redis://127.0.0.1:6379/1
+```
+
+### Celery 异步 Docker 沙箱判题
+
+```env
+JUDGE_EXECUTION_MODE=celery_docker
+CELERY_BROKER_URL=redis://127.0.0.1:6379/0
+CELERY_RESULT_BACKEND=redis://127.0.0.1:6379/1
+JUDGE_DOCKER_COMMAND=docker
+JUDGE_DOCKER_IMAGE=python:3.13-slim
 ```
 
 启动 Worker：
@@ -171,6 +185,6 @@ python manage.py runserver
 ## 当前状态
 
 - 后端主链已经完整跑通
-- 教师和学生的核心业务 API 已补齐
-- 异步判题和通知中心已经落地
-- 剩余主要是页面细化、Docker 沙箱判题和更完整的后台报表
+- 教师和学生核心业务 API 已补齐
+- 异步判题、Docker 沙箱判题、通知中心已经落地
+- 剩余主要是页面细化、Docker 真实运行环境联调和更完整的后台报表
