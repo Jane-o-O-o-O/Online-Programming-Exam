@@ -10,8 +10,9 @@
 - 基于 Session 的注册、登录、登出、当前用户接口
 - 教师/管理员创建题目与考试，学生开始考试、保存答案、交卷
 - QQ 邮箱验证码发送与密码重置流程
+- 本地同步编程题判题
+- 硅基流动大模型接入，可生成考试 AI 分析和提交 AI 讲评
 - Redis/Celery 配置占位
-- QQ 邮箱 SMTP 配置入口
 - Windows 一键启动脚本
 
 ## 当前 API
@@ -31,10 +32,12 @@
 - `POST /api/exams/exams/<id>/finish/`
 - `GET /api/exams/exams/<id>/submissions/`
 - `GET /api/exams/exams/<id>/analytics/`
+- `POST /api/exams/exams/<id>/analytics/ai-summary/`
 - `POST /api/exams/exams/<id>/start/`
 - `POST /api/exams/submissions/<id>/answers/`
 - `POST /api/exams/submissions/<id>/finish/`
 - `GET /api/exams/submissions/<id>/`
+- `POST /api/exams/submissions/<id>/ai-feedback/`
 
 ## Windows 本地启动
 
@@ -74,6 +77,23 @@ python manage.py seed_demo
 - 学生：`demo_student / Demo123456`
 - 已发布演示考试：`系统演示考试`
 
+## 硅基流动大模型配置
+
+在本地 `.env` 中填写：
+
+```env
+SILICONFLOW_API_KEY=your_siliconflow_api_key
+SILICONFLOW_BASE_URL=https://api.siliconflow.cn/v1
+SILICONFLOW_MODEL=Qwen/Qwen2.5-7B-Instruct
+SILICONFLOW_TIMEOUT=60
+```
+
+调用说明：
+
+- 教师端生成考试 AI 分析：`POST /api/exams/exams/<id>/analytics/ai-summary/`
+- 学生或教师生成提交 AI 讲评：`POST /api/exams/submissions/<id>/ai-feedback/`
+- 系统概览接口 `GET /api/exams/overview/` 会返回当前 LLM 是否已配置
+
 本地开发模式下，编程题会直接在当前机器上同步判题，不依赖 Docker 或 Celery。
 
 ## 手动启动
@@ -92,4 +112,4 @@ python manage.py runserver
 - 增加 Django REST Framework 和鉴权接口
 - 增加题目导入、考试编排、在线答题页面
 - 将真实判题逻辑接入 Docker 沙箱与 Celery Worker
-- 增加单元测试和初始化数据脚本
+- 为 AI 讲评增加缓存与异步任务队列

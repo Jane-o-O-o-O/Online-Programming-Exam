@@ -13,6 +13,7 @@ from django.views.decorators.http import require_GET, require_http_methods
 from apps.accounts.permissions import login_required_json, role_required, user_can_manage_exams
 from apps.judge.services import judge_answer
 
+from .llm import LLMServiceError, generate_exam_analytics_summary, generate_submission_feedback, llm_runtime
 from .models import Answer, Exam, ExamQuestion, KnowledgeTag, Question, Submission
 
 User = get_user_model()
@@ -73,6 +74,21 @@ def serialize_exam(exam: Exam) -> dict:
             for item in exam.exam_questions.select_related("question")
         ],
     }
+
+
+def serialize_submission_answers(submission: Submission) -> list[dict]:
+    return [
+        {
+            "question_id": item.question_id,
+            "question_title": item.question.title,
+            "question_type": item.question.question_type,
+            "judge_status": item.judge_status,
+            "auto_score": float(item.auto_score),
+            "judge_feedback": item.judge_feedback,
+            "judge_result": item.judge_task.result_payload if hasattr(item, "judge_task") else {},
+        }
+        for item in submission.answers.select_related("question").all().order_by("question_id")
+    ]
 
 
 def serialize_submission(submission: Submission) -> dict:
@@ -238,11 +254,17 @@ def replace_exam_questions(exam: Exam, question_items) -> None:
 @require_GET
 @login_required_json
 def overview(_request: HttpRequest) -> JsonResponse:
+    runtime = llm_runtime()
     return JsonResponse(
         {
             "exam_count": Exam.objects.count(),
             "question_count": Question.objects.count(),
             "submission_count": Submission.objects.count(),
+            "llm": {
+                "provider": runtime["provider"],
+                "model": runtime["model"],
+                "configured": runtime["configured"],
+            },
         }
     )
 
@@ -443,6 +465,39 @@ def exam_analytics(request: HttpRequest, exam_id: int) -> JsonResponse:
 
 @csrf_exempt
 @require_http_methods(["POST"])
+@login_required_json
+def exam_ai_summary(request: HttpRequest, exam_id: int) -> JsonResponse:
+    if not user_can_manage_exams(request.user):
+        return json_error("permission denied", 403)
+
+    exam = get_object_or_404(
+        Exam.objects.select_related("created_by").prefetch_related("submissions__student", "submissions__answers__question", "exam_questions__question"),
+        pk=exam_id,
+    )
+    analytics = serialize_exam_analytics(exam)
+    runtime = llm_runtime()
+    if not runtime["configured"]:
+        return json_error("siliconflow is not configured", 503)
+
+    try:
+        result = generate_exam_analytics_summary(exam, analytics)
+    except LLMServiceError as exc:
+        return json_error(str(exc), 502)
+
+    return JsonResponse(
+        {
+            "exam_id": exam.id,
+            "provider": result["provider"],
+            "model": result["model"],
+            "generated_at": timezone.now().isoformat(),
+            "content": result["content"],
+            "analytics": analytics,
+        }
+    )
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
 @role_required(User.Role.STUDENT)
 def start_submission(request: HttpRequest, exam_id: int) -> JsonResponse:
     exam = get_object_or_404(Exam.objects.select_related("created_by").prefetch_related("exam_questions__question"), pk=exam_id)
@@ -571,15 +626,45 @@ def submission_detail(request: HttpRequest, submission_id: int) -> JsonResponse:
             "status": submission.status,
             "total_score": float(submission.total_score),
             "submitted_at": submission.submitted_at.isoformat() if submission.submitted_at else None,
-            "answers": [
-                {
-                    "question_id": item.question_id,
-                    "judge_status": item.judge_status,
-                    "auto_score": float(item.auto_score),
-                    "judge_feedback": item.judge_feedback,
-                    "judge_result": item.judge_task.result_payload if hasattr(item, "judge_task") else {},
-                }
-                for item in submission.answers.select_related("question").all().order_by("question_id")
-            ],
+            "answers": serialize_submission_answers(submission),
+        }
+    )
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+@login_required_json
+def submission_ai_feedback(request: HttpRequest, submission_id: int) -> JsonResponse:
+    submission = get_object_or_404(
+        Submission.objects.select_related("student", "exam").prefetch_related("answers__question"),
+        pk=submission_id,
+    )
+    if not ensure_submission_access(request.user, submission):
+        return json_error("permission denied", 403)
+    if submission.status not in {Submission.Status.COMPLETED, Submission.Status.JUDGING}:
+        return json_error("submission must be finished before generating AI feedback", 409)
+
+    runtime = llm_runtime()
+    if not runtime["configured"]:
+        return json_error("siliconflow is not configured", 503)
+
+    try:
+        result = generate_submission_feedback(submission)
+    except LLMServiceError as exc:
+        return json_error(str(exc), 502)
+
+    return JsonResponse(
+        {
+            "submission_id": submission.id,
+            "provider": result["provider"],
+            "model": result["model"],
+            "generated_at": timezone.now().isoformat(),
+            "content": result["content"],
+            "submission": {
+                "id": submission.id,
+                "status": submission.status,
+                "total_score": float(submission.total_score),
+                "answers": serialize_submission_answers(submission),
+            },
         }
     )

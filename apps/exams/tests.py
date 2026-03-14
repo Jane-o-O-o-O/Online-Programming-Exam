@@ -1,4 +1,6 @@
-﻿from datetime import timedelta
+﻿import json
+from datetime import timedelta
+from unittest.mock import patch
 
 from django.contrib.auth import get_user_model
 from django.test import TestCase, override_settings
@@ -7,6 +9,20 @@ from django.utils import timezone
 from .models import Answer, Submission
 
 User = get_user_model()
+
+
+class FakeUrlOpenResponse:
+    def __init__(self, payload: dict):
+        self.payload = json.dumps(payload).encode("utf-8")
+
+    def read(self):
+        return self.payload
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc, tb):
+        return False
 
 
 @override_settings(JUDGE_EXECUTION_MODE="local")
@@ -270,3 +286,87 @@ class ExamApiTests(TestCase):
         self.assertEqual(payload["leaderboard"][0]["username"], "student")
         self.assertEqual(len(payload["question_stats"]), 2)
         self.assertEqual(payload["question_stats"][0]["accuracy_rate"], 0.5)
+
+    @override_settings(SILICONFLOW_API_KEY="test-key", SILICONFLOW_MODEL="Qwen/Qwen2.5-7B-Instruct", SILICONFLOW_BASE_URL="https://api.siliconflow.cn/v1")
+    @patch("apps.exams.llm.urlopen")
+    def test_teacher_can_get_exam_ai_summary(self, mock_urlopen):
+        mock_urlopen.return_value = FakeUrlOpenResponse(
+            {"choices": [{"message": {"content": "总体表现稳定，建议强化第 1 题相关知识点。"}}]}
+        )
+        self.client.force_login(self.teacher)
+        question_id = self.create_question(
+            title="AI Q1",
+            question_type="single",
+            prompt="1+1?",
+            options=["1", "2"],
+            correct_answer={"value": "2"},
+        )
+        exam_id = self.create_exam([{"question_id": question_id, "score": 100}], title="AI Analytics")
+
+        self.client.logout()
+        self.client.force_login(self.student)
+        submission_id = self.client.post(f"/api/exams/exams/{exam_id}/start/", content_type="application/json").json()["submission_id"]
+        self.client.post(
+            f"/api/exams/submissions/{submission_id}/answers/",
+            data={"answers": [{"question_id": question_id, "answer_payload": {"value": "2"}}]},
+            content_type="application/json",
+        )
+        self.client.post(f"/api/exams/submissions/{submission_id}/finish/", content_type="application/json")
+
+        self.client.logout()
+        self.client.force_login(self.teacher)
+        response = self.client.post(f"/api/exams/exams/{exam_id}/analytics/ai-summary/", content_type="application/json")
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["provider"], "siliconflow")
+        self.assertEqual(payload["model"], "Qwen/Qwen2.5-7B-Instruct")
+        self.assertIn("总体表现", payload["content"])
+
+    @override_settings(SILICONFLOW_API_KEY="test-key", SILICONFLOW_MODEL="Qwen/Qwen2.5-7B-Instruct", SILICONFLOW_BASE_URL="https://api.siliconflow.cn/v1")
+    @patch("apps.exams.llm.urlopen")
+    def test_student_can_get_submission_ai_feedback(self, mock_urlopen):
+        mock_urlopen.return_value = FakeUrlOpenResponse(
+            {"choices": [{"message": {"content": "本次表现较好，编程题判定通过，建议继续关注代码可读性。"}}]}
+        )
+        self.client.force_login(self.teacher)
+        question_id = self.create_question(
+            title="AI Code",
+            question_type="program",
+            prompt="Read n and print n*2",
+            language="python",
+            correct_answer={"cases": [{"input": "3\n", "output": "6\n"}]},
+            reference_answer="n = int(input())\nprint(n * 2)",
+        )
+        exam_id = self.create_exam([{"question_id": question_id, "score": 100}], title="AI Feedback")
+
+        self.client.logout()
+        self.client.force_login(self.student)
+        submission_id = self.client.post(f"/api/exams/exams/{exam_id}/start/", content_type="application/json").json()["submission_id"]
+        self.client.post(
+            f"/api/exams/submissions/{submission_id}/answers/",
+            data={"answers": [{"question_id": question_id, "source_code": "n=int(input())\nprint(n*2)"}]},
+            content_type="application/json",
+        )
+        self.client.post(f"/api/exams/submissions/{submission_id}/finish/", content_type="application/json")
+
+        response = self.client.post(f"/api/exams/submissions/{submission_id}/ai-feedback/", content_type="application/json")
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["provider"], "siliconflow")
+        self.assertIn("本次表现", payload["content"])
+        self.assertEqual(payload["submission"]["answers"][0]["judge_status"], Answer.JudgeStatus.ACCEPTED)
+
+    @override_settings(SILICONFLOW_API_KEY="", SILICONFLOW_MODEL="Qwen/Qwen2.5-7B-Instruct", SILICONFLOW_BASE_URL="https://api.siliconflow.cn/v1")
+    def test_ai_summary_returns_503_when_not_configured(self):
+        self.client.force_login(self.teacher)
+        question_id = self.create_question(
+            title="Config Check",
+            question_type="single",
+            prompt="1+1?",
+            options=["1", "2"],
+            correct_answer={"value": "2"},
+        )
+        exam_id = self.create_exam([{"question_id": question_id, "score": 100}], title="No Config")
+
+        response = self.client.post(f"/api/exams/exams/{exam_id}/analytics/ai-summary/", content_type="application/json")
+        self.assertEqual(response.status_code, 503)
